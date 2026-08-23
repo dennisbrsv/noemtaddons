@@ -1,0 +1,20 @@
+{
+	"required": true,
+	"package": "dev.noemt.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ExampleClientMixin",
+		"MixinPacketProcessorListener",
+		"MixinClientPacketListener",
+		"MixinGui",
+		"IMapState",
+		"IPlayerInfo",
+		"IKeyMapping"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

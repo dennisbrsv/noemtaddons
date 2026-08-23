@@ -1,0 +1,114 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+	id "org.jetbrains.kotlin.jvm" version "2.4.10"
+	id 'com.gradleup.shadow' version '9.0.0-beta10'
+}
+
+configurations {
+	shadowModImpl
+	implementation.extendsFrom(shadowModImpl)
+}
+
+loom {
+	accessWidenerPath = file("src/main/resources/noemtaddons.accesswidener")
+	splitEnvironmentSourceSets()
+
+	mods {
+		"noemtaddons" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		name = "NotEnoughUpdates"
+		url = "https://maven.notenoughupdates.org/releases/"
+	}
+	maven {
+		name = "NeaReleases"
+		url = "https://repo.nea.moe/releases"
+	}
+	maven {
+		name = "JitPack"
+		url = "https://jitpack.io"
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	implementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
+
+	// MoulConfig Dependency
+	shadowModImpl("org.notenoughupdates.moulconfig:modern-26.2:4.7.2")
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+kotlin {
+	compilerOptions {
+		jvmTarget = JvmTarget.JVM_25
+	}
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+tasks.shadowJar {
+	configurations = [project.configurations.shadowModImpl]
+	from sourceSets.main.output
+	from sourceSets.client.output
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	exclude "moulconfig.accesswidener"
+	relocate "io.github.notenoughupdates.moulconfig", "dev.noemt.client.deps.moulconfig"
+	archiveClassifier.set("")
+	mergeServiceFiles()
+
+	def projectName = project.name
+	inputs.property "projectName", projectName
+	from("LICENSE") {
+		rename { "${it}_$projectName" }
+	}
+}
+
+tasks.jar {
+	enabled = false
+}
+
+tasks.assemble {
+	dependsOn tasks.shadowJar
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	repositories {
+	}
+}
