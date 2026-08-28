@@ -24,7 +24,10 @@ import kotlin.random.Random
 
 object LoadoutManager {
     private val mc: Minecraft get() = Minecraft.getInstance()
-    private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    private val gson: Gson = GsonBuilder()
+        .registerTypeAdapter(LoadoutCondition::class.java, LoadoutConditionAdapter())
+        .setPrettyPrinting()
+        .create()
 
     private val configFile: File by lazy {
         val dir = File(Minecraft.getInstance().gameDirectory, "noemtaddons")

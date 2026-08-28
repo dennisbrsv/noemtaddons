@@ -1,6 +1,9 @@
 package dev.noemt.client.features.loadout
 
+import com.google.gson.*
+import com.google.gson.reflect.TypeToken
 import net.minecraft.world.entity.Entity
+import java.lang.reflect.Type
 
 enum class MatchType {
     CONTAINS,
@@ -135,6 +138,104 @@ sealed class LoadoutCondition {
                 CompositeMode.AND -> conditions.all { it.matches(context) }
                 CompositeMode.OR -> conditions.any { it.matches(context) }
             }
+        }
+    }
+}
+
+class LoadoutConditionAdapter : JsonSerializer<LoadoutCondition>, JsonDeserializer<LoadoutCondition> {
+    override fun serialize(src: LoadoutCondition, typeOfSrc: Type, context: JsonSerializationContext): JsonElement {
+        val obj = JsonObject()
+        when (src) {
+            is LoadoutCondition.GameInstanceCondition -> {
+                obj.addProperty("type", "GAME_INSTANCE")
+                obj.addProperty("instanceType", src.instanceType.name)
+                if (src.floorFilter != null) obj.addProperty("floorFilter", src.floorFilter)
+            }
+            is LoadoutCondition.MinibossCondition -> {
+                obj.addProperty("type", "MINIBOSS")
+                obj.addProperty("autoRevertOnKill", src.autoRevertOnKill)
+            }
+            is LoadoutCondition.AimCondition -> {
+                obj.addProperty("type", "AIM")
+                obj.addProperty("mobCategory", src.mobCategory.name)
+                if (src.nameFilter != null) obj.addProperty("nameFilter", src.nameFilter)
+                if (src.skullTexture != null) obj.addProperty("skullTexture", src.skullTexture)
+                obj.addProperty("maxDistance", src.maxDistance)
+            }
+            is LoadoutCondition.ChatCondition -> {
+                obj.addProperty("type", "CHAT")
+                obj.addProperty("pattern", src.pattern)
+                obj.addProperty("matchType", src.matchType.name)
+            }
+            is LoadoutCondition.ProximityCondition -> {
+                obj.addProperty("type", "PROXIMITY")
+                obj.addProperty("mobCategory", src.mobCategory.name)
+                if (src.nameFilter != null) obj.addProperty("nameFilter", src.nameFilter)
+                obj.addProperty("radius", src.radius)
+            }
+            is LoadoutCondition.LocationCondition -> {
+                obj.addProperty("type", "LOCATION")
+                obj.addProperty("areaName", src.areaName)
+                obj.addProperty("matchType", src.matchType.name)
+            }
+            is LoadoutCondition.CompositeCondition -> {
+                obj.addProperty("type", "COMPOSITE")
+                obj.add("conditions", context.serialize(src.conditions))
+                obj.addProperty("mode", src.mode.name)
+            }
+        }
+        return obj
+    }
+
+    override fun deserialize(json: JsonElement, typeOfT: Type, context: JsonDeserializationContext): LoadoutCondition {
+        val obj = json.asJsonObject
+        val type = obj.get("type")?.asString ?: "AIM"
+        return when (type) {
+            "GAME_INSTANCE" -> {
+                val instName = obj.get("instanceType")?.asString ?: "DUNGEONS"
+                val instEnum = runCatching { GameInstanceType.valueOf(instName) }.getOrDefault(GameInstanceType.DUNGEONS)
+                val floor = obj.get("floorFilter")?.asString
+                LoadoutCondition.GameInstanceCondition(instEnum, floor)
+            }
+            "MINIBOSS" -> {
+                val revert = obj.get("autoRevertOnKill")?.asBoolean ?: true
+                LoadoutCondition.MinibossCondition(revert)
+            }
+            "AIM" -> {
+                val catName = obj.get("mobCategory")?.asString ?: "ANY"
+                val catEnum = runCatching { MobCategory.valueOf(catName) }.getOrDefault(MobCategory.ANY)
+                val nameFilter = obj.get("nameFilter")?.asString
+                val skull = obj.get("skullTexture")?.asString
+                val dist = obj.get("maxDistance")?.asDouble ?: 15.0
+                LoadoutCondition.AimCondition(catEnum, nameFilter, skull, dist)
+            }
+            "CHAT" -> {
+                val pattern = obj.get("pattern")?.asString ?: ""
+                val matchName = obj.get("matchType")?.asString ?: "CONTAINS"
+                val matchEnum = runCatching { MatchType.valueOf(matchName) }.getOrDefault(MatchType.CONTAINS)
+                LoadoutCondition.ChatCondition(pattern, matchEnum)
+            }
+            "PROXIMITY" -> {
+                val catName = obj.get("mobCategory")?.asString ?: "ANY"
+                val catEnum = runCatching { MobCategory.valueOf(catName) }.getOrDefault(MobCategory.ANY)
+                val nameFilter = obj.get("nameFilter")?.asString
+                val rad = obj.get("radius")?.asDouble ?: 8.0
+                LoadoutCondition.ProximityCondition(catEnum, nameFilter, rad)
+            }
+            "LOCATION" -> {
+                val area = obj.get("areaName")?.asString ?: ""
+                val matchName = obj.get("matchType")?.asString ?: "CONTAINS"
+                val matchEnum = runCatching { MatchType.valueOf(matchName) }.getOrDefault(MatchType.CONTAINS)
+                LoadoutCondition.LocationCondition(area, matchEnum)
+            }
+            "COMPOSITE" -> {
+                val condsType = object : TypeToken<List<LoadoutCondition>>() {}.type
+                val conds: List<LoadoutCondition> = context.deserialize(obj.get("conditions"), condsType) ?: emptyList()
+                val modeName = obj.get("mode")?.asString ?: "AND"
+                val modeEnum = runCatching { CompositeMode.valueOf(modeName) }.getOrDefault(CompositeMode.AND)
+                LoadoutCondition.CompositeCondition(conds, modeEnum)
+            }
+            else -> LoadoutCondition.AimCondition(MobCategory.ANY)
         }
     }
 }
