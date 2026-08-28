@@ -85,6 +85,7 @@ object LoadoutManager {
         private set
     private var pendingAutoClose: Boolean = false
     private var lastManualClick: Long = 0L
+    private var lastSwapExecutionMs: Long = 0L
 
     // Automated GUI Swap State Machine
     private enum class SwapStage {
@@ -293,6 +294,12 @@ object LoadoutManager {
             return
         }
 
+        val now = System.currentTimeMillis()
+        if (!force && now - lastSwapExecutionMs < 1200L) {
+            return
+        }
+        lastSwapExecutionMs = now
+
         if (currentLoadoutId != id) {
             previousLoadoutId = currentLoadoutId
         }
@@ -409,6 +416,7 @@ object LoadoutManager {
                 if (now >= stageTargetTimeMs) {
                     player.closeContainer()
                     mc.setScreen(null)
+                    pendingAutoClose = true
                     currentStage = SwapStage.POST_ACTIONS
                 }
             }
@@ -446,6 +454,11 @@ object LoadoutManager {
     fun onPacketOpenScreen(title: String) {
         if (SkyblockLoadoutConstants.LOADOUT_MENU_REGEX.matches(title)) {
             inLoadoutMenu = true
+            if (pendingAutoClose) {
+                pendingAutoClose = false
+                mc.player?.closeContainer()
+                mc.setScreen(null)
+            }
         }
     }
 
