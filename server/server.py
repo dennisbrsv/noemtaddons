@@ -777,6 +777,10 @@ async def send_to_target(target: str, payload: dict) -> int:
 # ==============================================================================
 
 async def interactive_console():
+    if not sys.stdin or not sys.stdin.isatty():
+        # Daemon / PM2 mode: skip interactive prompt
+        return
+
     await asyncio.sleep(1)
     print("\n" + "=" * 65)
     print(" 🚀 NoemtAddons CI/CD & Control Server Console Ready")
