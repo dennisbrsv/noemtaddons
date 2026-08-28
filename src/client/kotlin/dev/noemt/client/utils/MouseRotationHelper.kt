@@ -187,7 +187,16 @@ object MouseRotationHelper {
         player.yRot = newYaw
         player.xRot = newPitch
         player.yHeadRot = newYaw
-        player.yBodyRot = newYaw
+
+        // Natural player body rotation:
+        // Head rotates freely up to 45° relative to torso; body only follows when exceeding shoulder angle limit
+        val bodyYawDiff = Mth.wrapDegrees(newYaw - player.yBodyRot)
+        val maxAngle = 45.0f
+        if (bodyYawDiff < -maxAngle) {
+            player.yBodyRot = newYaw + maxAngle
+        } else if (bodyYawDiff > maxAngle) {
+            player.yBodyRot = newYaw - maxAngle
+        }
         player.forceSetRotation(newYaw, false, newPitch, false)
     }
 }

@@ -69,7 +69,14 @@ object RotationUtils {
         player.yRot = fixed.yaw
         player.xRot = fixed.pitch
         player.yHeadRot = fixed.yaw
-        player.yBodyRot = fixed.yaw
+
+        val bodyYawDiff = Mth.wrapDegrees(fixed.yaw - player.yBodyRot)
+        val maxAngle = 45.0f
+        if (bodyYawDiff < -maxAngle) {
+            player.yBodyRot = fixed.yaw + maxAngle
+        } else if (bodyYawDiff > maxAngle) {
+            player.yBodyRot = fixed.yaw - maxAngle
+        }
         player.forceSetRotation(fixed.yaw, false, fixed.pitch, false)
     }
 
