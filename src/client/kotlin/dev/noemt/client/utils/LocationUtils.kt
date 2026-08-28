@@ -4,12 +4,9 @@ import dev.noemt.client.event.EventBus
 import dev.noemt.client.event.impl.MainThreadPacketReceivedEvent
 import dev.noemt.client.event.impl.WorldChangeEvent
 import dev.noemt.client.event.priority.EventPriority
-import dev.noemt.client.utils.ChatUtils.removeFormatting
 import dev.noemt.client.utils.MathUtils.aabb
 import net.minecraft.client.Minecraft
 import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
-import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket
-import kotlin.jvm.optionals.getOrNull
 
 object LocationUtils {
     private val mc: Minecraft get() = Minecraft.getInstance()
@@ -18,24 +15,21 @@ object LocationUtils {
         get() = mc.player?.connection?.serverBrand()?.lowercase()?.contains("hypixel") == true
 
     var inSkyblock: Boolean = false
-    var inDungeon: Boolean = false
+
+    val inDungeon: Boolean
+        get() {
+            val area = ScoreboardUtils.getSkyblockArea() ?: return false
+            return (area.contains("Catacombs", ignoreCase = true) || area.contains("The Catacombs", ignoreCase = true)) &&
+                    !area.contains("Dungeon Hub", ignoreCase = true)
+        }
+
     var dungeonFloor: String? = null
     var dungeonFloorNumber: Int? = null
     var inBoss: Boolean = false
 
     fun init() {
         EventBus.register<MainThreadPacketReceivedEvent.Post>(EventPriority.HIGHEST) {
-            if (event.packet is ClientboundSetPlayerTeamPacket) {
-                val params = event.packet.parameters.getOrNull() ?: return@register
-                val text = (params.playerPrefix.string + params.playerSuffix.string).removeFormatting()
-
-                if (!inDungeon && text.contains("The Catacombs (") && !text.contains("Queue")) {
-                    inDungeon = true
-                    inSkyblock = true
-                    dungeonFloor = text.substringAfter("(").substringBefore(")")
-                    dungeonFloorNumber = dungeonFloor?.lastOrNull()?.digitToIntOrNull() ?: 0
-                }
-            } else if (event.packet is ClientboundSetObjectivePacket) {
+            if (event.packet is ClientboundSetObjectivePacket) {
                 if (!inSkyblock) inSkyblock = onHypixel && event.packet.objectiveName == "SBScoreboard"
             }
         }
@@ -45,7 +39,6 @@ object LocationUtils {
 
     private fun reset() {
         inSkyblock = false
-        inDungeon = false
         dungeonFloor = null
         dungeonFloorNumber = null
         inBoss = false

@@ -39,8 +39,13 @@ object ScoreboardUtils {
         val lines = getSidebarLines()
         for (line in lines) {
             if (line.contains("⏣") || line.startsWith("Area:", ignoreCase = true)) {
-                return line.replace("⏣", "").replace("Area:", "", ignoreCase = true).trim()
+                val cleaned = line.replace("⏣", "").replace("Area:", "", ignoreCase = true).trim()
+                if (cleaned.isNotBlank()) return cleaned
             }
+        }
+        // Fallback checks on sidebar lines
+        for (line in lines) {
+            if (line.contains("Dungeon Hub", ignoreCase = true)) return "Dungeon Hub"
             if (line.contains("The Catacombs", ignoreCase = true) || line.contains("Catacombs (", ignoreCase = true)) {
                 return line.trim()
             }
@@ -50,12 +55,11 @@ object ScoreboardUtils {
 
     fun detectGameInstance(): Pair<GameInstanceType, String>? {
         val area = getSkyblockArea() ?: return null
-        val lines = getSidebarLines()
-        val allText = (listOf(area) + lines).joinToString(" ").uppercase()
+        val areaUpper = area.uppercase()
 
         for (instance in GameInstanceType.values()) {
-            if (instance.negativeKeywords.any { allText.contains(it) }) continue
-            if (instance.keywords.any { allText.contains(it) }) {
+            if (instance.negativeKeywords.any { areaUpper.contains(it) }) continue
+            if (instance.keywords.any { areaUpper.contains(it) }) {
                 return instance to area
             }
         }

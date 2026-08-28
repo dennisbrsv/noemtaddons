@@ -8,6 +8,7 @@ import dev.noemt.client.event.impl.RenderOverlayEvent
 import dev.noemt.client.event.impl.TickEvent
 import dev.noemt.client.module.Module
 import dev.noemt.client.module.ModuleType
+import dev.noemt.client.utils.LocationUtils
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.network.chat.Component
@@ -88,34 +89,21 @@ object LoadoutModule : Module {
         // 3. Player Death Reset
         register<dev.noemt.client.event.impl.DungeonEvent.PlayerDeathEvent> {
             if (event.name == mc.user.name) {
-                LoadoutManager.resetMinibossState()
+                LoadoutManager.onPlayerDeath()
             }
         }
 
         // 4. Dungeon Entry & State Triggers
         register<dev.noemt.client.event.impl.DungeonEvent.RunStatedEvent> {
             if (!ConfigManager.config.loadout.enabled) return@register
-            LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs"))
+            LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs DUNGEONS"))
         }
 
-        // 4. Area / Scoreboard Instance Detection
-        register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Post> {
-            if (!ConfigManager.config.loadout.enabled) return@register
-            val packet = event.packet
-            if (packet is net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket) {
-                val params = packet.parameters.orElse(null) ?: return@register
-                val text = (params.playerPrefix.string + params.playerSuffix.string)
-                if (text.isNotBlank()) {
-                    LoadoutManager.checkConditions(ConditionContext(location = text))
-                }
-            }
-        }
-
-        // 2. Tick Event for Keybinds & Aim Triggers & Swap State Machine
+        // 5. Tick Event for Keybinds & Aim Triggers & Swap State Machine
         register<TickEvent.Start> {
             val player = mc.player ?: return@register
 
-            // Process automated GUI swap state machine
+            // Process automated GUI swap state machine & instance checking
             LoadoutManager.onTick()
 
             // Check Keybinds (always active)
@@ -140,9 +128,9 @@ object LoadoutModule : Module {
 
             if (!ConfigManager.config.loadout.enabled) return@register
 
-            // Raycast Aim Check (every 2 ticks for peak performance)
+            // Raycast Aim Check (every 4 ticks for smooth and reliable detection)
             tickCounter++
-            if (tickCounter % 2 == 0) {
+            if (tickCounter % 4 == 0 && LocationUtils.inDungeon) {
                 val aimedEntity = MobMatcher.getAimedEntity(maxDistance = 16.0)
                 if (aimedEntity != null) {
                     LoadoutManager.checkConditions(ConditionContext(aimedEntity = aimedEntity))
@@ -150,7 +138,7 @@ object LoadoutModule : Module {
             }
         }
 
-        // 3. HUD Display
+        // 6. HUD Display
         register<RenderOverlayEvent> {
             val config = ConfigManager.config.loadout
             if (!config.enabled || !config.showHud) return@register
