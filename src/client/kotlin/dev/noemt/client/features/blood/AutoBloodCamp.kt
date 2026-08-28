@@ -57,6 +57,7 @@ object AutoBloodCamp : Module {
     private var kp7WasDown = false
 
     private val recordedSpawnLocations = mutableListOf<Vec3>()
+    private val recordedBoxPositions = mutableListOf<Vec3>()
 
     private val lividDisablerRegex = Regex("""\[BOSS\] .+ Livid: My shadows are everywhere, THEY WILL FIND YOU!!""", RegexOption.IGNORE_CASE)
 
@@ -347,12 +348,17 @@ object AutoBloodCamp : Module {
                 return@register
             }
 
-            // 6. Find imminent / airborne spawning mobs (Bounding boxes calculated at ground level)
+            // 6. Find imminent / airborne spawning mobs (Bounding boxes in the air)
             val currentTime = DungeonListener.currentTime
             val spawningCandidates = BloodCamp.bloodMobs.entries
                 .mapNotNull { (stand, data) ->
                     val endVec = data.endVector ?: return@mapNotNull null
                     if (!isInsideBloodRoom(endVec)) return@mapNotNull null
+
+                    val boxPos = endVec.add(0.0, 2.0, 0.0)
+                    if (recordedBoxPositions.none { it.distanceTo(boxPos) < 1.0 }) {
+                        recordedBoxPositions.add(boxPos)
+                    }
 
                     if (recordedSpawnLocations.none { it.distanceTo(endVec) < 1.0 }) {
                         recordedSpawnLocations.add(endVec)
@@ -372,26 +378,25 @@ object AutoBloodCamp : Module {
 
             val nextSpawning = spawningCandidates.firstOrNull()
 
-            // 7. Aim at the predicted ground landing/spawn position
-            // DO NOT follow the path of the skulls in the air! Aim at ground bounding box location.
+            // 7. Aim at the predicted box in the air for spawning mob
             if (nextSpawning != null) {
                 val (_, data, time) = nextSpawning
                 val endVec = data.endVector!!
-                // Position on ground (at mob height)
-                val groundTargetVec = Vec3(endVec.x, endVec.y.coerceIn(68.0, 71.0) + 1.2, endVec.z)
+                // Center of the bounding box in the air (Y+2.0)
+                val boxTargetVec = endVec.add(0.0, 2.0, 0.0)
 
                 val eyePos = player.eyePosition
-                val dist = eyePos.distanceTo(groundTargetVec)
-                val hasLos = PathfindingUtils.hasLineOfSight(eyePos, groundTargetVec)
+                val dist = eyePos.distanceTo(boxTargetVec)
+                val hasLos = PathfindingUtils.hasLineOfSight(eyePos, boxTargetVec)
 
                 if (!hasLos || dist > maxRange) {
                     if (!isEvadingTnt) {
                         val now = System.currentTimeMillis()
-                        val walkShootPos = PathfindingUtils.findBestShootingPosition(groundTargetVec, tntPositions)
+                        val walkShootPos = PathfindingUtils.findBestShootingPosition(boxTargetVec, tntPositions)
                         val walkDist = walkShootPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
 
                         if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && now - lastAotvTime > 500) {
-                            val shootPos = PathfindingUtils.findAotvShootingPosition(groundTargetVec, tntPositions)
+                            val shootPos = PathfindingUtils.findAotvShootingPosition(boxTargetVec, tntPositions)
                             if (shootPos != null) {
                                 val targetPoint = Vec3(shootPos.x + 0.5, shootPos.y + 0.95, shootPos.z + 0.5)
                                 MouseRotationHelper.setTarget(targetPoint, config.autoBloodAimSpeed)
@@ -413,7 +418,7 @@ object AutoBloodCamp : Module {
                     if (!isEvadingTnt) {
                         PathfindingUtils.stopMovement()
                     }
-                    MouseRotationHelper.setTarget(groundTargetVec, config.autoBloodAimSpeed)
+                    MouseRotationHelper.setTarget(boxTargetVec, config.autoBloodAimSpeed)
                 }
 
                 if (time <= 0.0) {
@@ -422,12 +427,20 @@ object AutoBloodCamp : Module {
                 return@register
             }
 
-            // 8. No prediction yet & No ground mobs: Aim at the center floor of the blood room
-            // DO NOT aim at the wall or at the Watcher!
+            // 8. Resting Position: Average position of all recorded boxes in the air
+            val restingTarget: Vec3 = if (recordedBoxPositions.isNotEmpty()) {
+                val avgX = recordedBoxPositions.sumOf { it.x } / recordedBoxPositions.size
+                val avgY = recordedBoxPositions.sumOf { it.y } / recordedBoxPositions.size
+                val avgZ = recordedBoxPositions.sumOf { it.z } / recordedBoxPositions.size
+                Vec3(avgX, avgY, avgZ)
+            } else {
+                Vec3(roomCenterPos.x + 0.5, 71.0, roomCenterPos.z + 0.5)
+            }
+
             if (!isEvadingTnt) {
                 PathfindingUtils.stopMovement()
             }
-            MouseRotationHelper.setTarget(roomCenterFloor, config.autoBloodAimSpeed)
+            MouseRotationHelper.setTarget(restingTarget, config.autoBloodAimSpeed)
         }
     }
 
@@ -468,6 +481,7 @@ object AutoBloodCamp : Module {
         lastAotvTime = 0L
         savedWeaponSlot = null
         recordedSpawnLocations.clear()
+        recordedBoxPositions.clear()
         PathfindingUtils.stopMovement()
         MouseRotationHelper.clearTarget()
     }

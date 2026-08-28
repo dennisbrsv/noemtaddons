@@ -424,9 +424,9 @@ open class NoemtaddonsConfig : Config() {
 
         @Expose
         @ConfigOption(name = "Aim Speed", desc = "Speed multiplier for smooth aim rotation.")
-        @ConfigEditorSlider(minValue = 0.5f, maxValue = 3.0f, minStep = 0.1f)
+        @ConfigEditorSlider(minValue = 0.2f, maxValue = 3.0f, minStep = 0.1f)
         @JvmField
-        var autoBloodAimSpeed: Float = 1.2f
+        var autoBloodAimSpeed: Float = 0.9f
 
         @Expose
         @ConfigOption(name = "Attack CPS", desc = "Clicks per second when attacking blood mobs.")

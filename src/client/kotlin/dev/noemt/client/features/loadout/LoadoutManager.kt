@@ -417,7 +417,18 @@ object LoadoutManager {
         // 2. Miniboss Memory Tracking Check
         checkMinibossTrackingTick()
 
-        // 3. Periodic Scoreboard / Instance Detection Check (every 10 ticks)
+        // 3. Immediate Blood Room Entry Check every tick (instant rule trigger upon entering)
+        if (ConfigManager.config.loadout.enabled && (lastDetectedInstance == GameInstanceType.DUNGEONS || LocationUtils.inDungeon)) {
+            val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+            if (inBlood && !wasInBloodRoom) {
+                wasInBloodRoom = true
+                checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))
+            } else if (!inBlood && wasInBloodRoom) {
+                wasInBloodRoom = false
+            }
+        }
+
+        // 4. Periodic Scoreboard / Instance Detection Check (every 10 ticks)
         instanceCheckCounter++
         if (instanceCheckCounter % 10 == 0) {
             checkGameInstance()

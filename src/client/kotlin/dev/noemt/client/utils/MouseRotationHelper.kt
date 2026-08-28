@@ -49,7 +49,7 @@ object MouseRotationHelper {
             curveBiasPitch = dYaw * 0.03 * perp
         }
         targetVec = target
-        speedMultiplier = speed.coerceIn(0.4f, 2.5f)
+        speedMultiplier = speed.coerceIn(0.2f, 2.5f)
     }
 
     fun clearTarget() {
@@ -108,13 +108,11 @@ object MouseRotationHelper {
         val curvedPitchDiff = rawPitchDiff + (curveBiasPitch * arcFactor)
         val curvedDist = sqrt(curvedYawDiff * curvedYawDiff + curvedPitchDiff * curvedPitchDiff).coerceAtLeast(0.01)
 
-        // Minimum Jerk & Fitts's Law human speed profile:
-        // - High speed during ballistic sweep phase (~260-340 deg/s)
-        // - Soft cubic deceleration tail as crosshair nears the target
+        // Smooth and slower human speed profile
         val baseMaxSpeed = when {
-            totalDist > 90.0 -> 270.0 * speedMultiplier
-            totalDist > 30.0 -> 320.0 * speedMultiplier
-            else -> 260.0 * speedMultiplier
+            totalDist > 90.0 -> 130.0 * speedMultiplier
+            totalDist > 30.0 -> 160.0 * speedMultiplier
+            else -> 120.0 * speedMultiplier
         }
 
         // Smooth S-curve deceleration (Fitts's Law correction phase)
@@ -122,12 +120,11 @@ object MouseRotationHelper {
             totalDist > 35.0 -> 1.0
             totalDist > 8.0 -> {
                 val t = (totalDist - 8.0) / 27.0
-                // Smooth hermite interpolation: 3t^2 - 2t^3
-                0.30 + 0.70 * (t * t * (3.0 - 2.0 * t))
+                0.25 + 0.75 * (t * t * (3.0 - 2.0 * t))
             }
             else -> {
                 val t = (totalDist / 8.0).coerceIn(0.05, 1.0)
-                0.08 + 0.22 * (t.pow(1.15))
+                0.05 + 0.20 * (t.pow(1.15))
             }
         }
 
@@ -140,9 +137,9 @@ object MouseRotationHelper {
         val desiredVelPitch = dirPitch * targetSpeed
 
         // Human neuromuscular response damping (spring-damper acceleration)
-        val accel = 16.0 * dt
-        currentVelYaw += (desiredVelYaw - currentVelYaw) * accel.coerceIn(0.08, 0.92)
-        currentVelPitch += (desiredVelPitch - currentVelPitch) * accel.coerceIn(0.08, 0.92)
+        val accel = 8.5 * dt
+        currentVelYaw += (desiredVelYaw - currentVelYaw) * accel.coerceIn(0.05, 0.85)
+        currentVelPitch += (desiredVelPitch - currentVelPitch) * accel.coerceIn(0.05, 0.85)
 
         // Physiological micro-tremor (subtle 10Hz human hand micro-noise, <0.04 deg)
         noiseTime += dt * 10.0
