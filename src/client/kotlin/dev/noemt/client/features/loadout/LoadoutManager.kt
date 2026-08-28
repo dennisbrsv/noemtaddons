@@ -399,10 +399,6 @@ object LoadoutManager {
                     PlayerUtils.swapToSlot(s)
                 }
 
-                loadout.petName?.takeIf { it.isNotBlank() }?.let { pet ->
-                    sendClientCommand("/pet $pet")
-                }
-
                 for (extraCmd in loadout.commands) {
                     if (extraCmd.isNotBlank()) {
                         sendClientCommand(extraCmd)
@@ -429,7 +425,9 @@ object LoadoutManager {
     }
 
     fun onPacketOpenScreen(title: String) {
-        inLoadoutMenu = title.matches(SkyblockLoadoutConstants.LOADOUT_MENU_REGEX)
+        if (SkyblockLoadoutConstants.LOADOUT_MENU_REGEX.matches(title)) {
+            inLoadoutMenu = true
+        }
     }
 
     fun onPacketCloseScreen() {
@@ -456,7 +454,9 @@ object LoadoutManager {
             val id = "loadout_$loadoutNum"
             val existing = loadouts[id]
 
-            // Extract pet if in lore
+            // Extract item registry key, skull texture, and lore lines
+            val itemKey = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.item).toString()
+            val skull = ItemUtils.getSkullTexture(item)
             val lore = ItemUtils.run { item.lore }
             val petLine = lore.find { it.contains("Pet:", ignoreCase = true) }
             val extractedPet = petLine?.removeFormatting()?.substringAfter("Pet:")?.trim()?.takeIf { it.isNotBlank() }
@@ -465,6 +465,9 @@ object LoadoutManager {
                 existing.name = rawName
                 existing.loadoutSlot = loadoutNum
                 existing.openCommand = "/loadouts"
+                existing.itemType = itemKey
+                existing.skullTexture = skull
+                existing.loreLines = lore
                 if (extractedPet != null) existing.petName = extractedPet
             } else {
                 loadouts[id] = Loadout(
@@ -472,6 +475,9 @@ object LoadoutManager {
                     name = rawName,
                     loadoutSlot = loadoutNum,
                     openCommand = "/loadouts",
+                    itemType = itemKey,
+                    skullTexture = skull,
+                    loreLines = lore,
                     petName = extractedPet,
                     slot = if (index < 9) index else null
                 )
@@ -664,13 +670,36 @@ object LoadoutManager {
     private fun loadData() {
         try {
             if (configFile.exists()) {
-                val type = object : TypeToken<Map<String, Loadout>>() {}.type
-                val loaded: Map<String, Loadout>? = gson.fromJson(configFile.readText(), type)
-                if (loaded != null) {
-                    loadouts.clear()
-                    for ((k, v) in loaded) {
-                        v.openCommand = "/loadouts"
-                        loadouts[k] = v
+                val text = configFile.readText()
+                val element = com.google.gson.JsonParser.parseString(text)
+                if (element.isJsonObject) {
+                    val root = element.asJsonObject
+                    if (root.has("loadoutAId")) {
+                        loadoutAId = root.get("loadoutAId").asString
+                    }
+                    if (root.has("loadoutBId")) {
+                        loadoutBId = root.get("loadoutBId").asString
+                    }
+                    if (root.has("loadouts")) {
+                        val type = object : TypeToken<Map<String, Loadout>>() {}.type
+                        val loaded: Map<String, Loadout>? = gson.fromJson(root.get("loadouts"), type)
+                        if (loaded != null) {
+                            loadouts.clear()
+                            for ((k, v) in loaded) {
+                                v.openCommand = "/loadouts"
+                                loadouts[k] = v
+                            }
+                        }
+                    } else {
+                        val type = object : TypeToken<Map<String, Loadout>>() {}.type
+                        val loaded: Map<String, Loadout>? = gson.fromJson(element, type)
+                        if (loaded != null) {
+                            loadouts.clear()
+                            for ((k, v) in loaded) {
+                                v.openCommand = "/loadouts"
+                                loadouts[k] = v
+                            }
+                        }
                     }
                 }
             }
@@ -694,7 +723,11 @@ object LoadoutManager {
 
     fun saveData() {
         try {
-            configFile.writeText(gson.toJson(loadouts))
+            val root = JsonObject()
+            root.addProperty("loadoutAId", loadoutAId)
+            root.addProperty("loadoutBId", loadoutBId)
+            root.add("loadouts", gson.toJsonTree(loadouts))
+            configFile.writeText(gson.toJson(root))
             rulesFile.writeText(gson.toJson(rules))
         } catch (e: Exception) {
             ChatUtils.modMessage("&cFailed saving loadouts: ${e.message}")

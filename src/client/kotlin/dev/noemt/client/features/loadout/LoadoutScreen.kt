@@ -9,6 +9,7 @@ import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.component.DataComponents
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.sounds.SoundEvents
@@ -215,6 +216,29 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
         return stack
     }
 
+    private fun getLoadoutItem(lo: Loadout, defaultSlotNum: Int): Item {
+        if (!lo.itemType.isNullOrBlank()) {
+            val id = Identifier.tryParse(lo.itemType!!)
+            if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+                return BuiltInRegistries.ITEM.getValue(id)
+            }
+        }
+        return when (defaultSlotNum) {
+            1 -> Items.NETHERITE_CHESTPLATE
+            2 -> Items.DIAMOND_CHESTPLATE
+            3 -> Items.GOLDEN_CHESTPLATE
+            4 -> Items.IRON_CHESTPLATE
+            5 -> Items.CHAINMAIL_CHESTPLATE
+            6 -> Items.LEATHER_CHESTPLATE
+            7 -> Items.NETHERITE_HELMET
+            8 -> Items.DIAMOND_HELMET
+            9 -> Items.GOLDEN_HELMET
+            10 -> Items.IRON_HELMET
+            11 -> Items.CHAINMAIL_HELMET
+            else -> Items.LEATHER_HELMET
+        }
+    }
+
     private fun getAssignedLoadoutName(target: ConfigTarget): String? {
         return when (target) {
             ConfigTarget.TOGGLE_A -> LoadoutManager.loadoutAId.takeIf { it.isNotBlank() }?.let { LoadoutManager.loadouts[it]?.name ?: it }
@@ -263,8 +287,8 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
             )
 
             if (assigned != null) {
-                lore.add("§eClick to change loadout!")
-                lore.add("§bRight-Click to toggle ON/OFF!")
+                lore.add("§eLeft-Click: §fChange loadout")
+                lore.add("§bRight-Click: §fToggle ON/OFF")
             } else {
                 lore.add("§eClick to select loadout!")
             }
@@ -364,6 +388,22 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
         val target = activeConfigTarget ?: ConfigTarget.CATACOMBS
         val assigned = getAssignedLoadoutName(target)
 
+        // Center Summary Banner (Slot 4)
+        if (slot == 4) {
+            return createItem(
+                Items.WRITABLE_BOOK,
+                "§eConfiguring: §a${target.displayName}",
+                listOf(
+                    "§7${target.description}",
+                    "",
+                    "§7Currently Selected: §e${assigned ?: "§cNone"}",
+                    "",
+                    "§7Click any loadout below to assign it!",
+                    "§7Right-click any loadout to equip it immediately."
+                )
+            )
+        }
+
         // 12 Loadout Slots
         val loadoutEntry = HYPIXEL_LOADOUT_SLOTS.find { it.first == slot }
         if (loadoutEntry != null) {
@@ -371,41 +411,36 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
             val id = "loadout_$loadoutNum"
             val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $loadoutNum", loadoutSlot = loadoutNum)
             val isSelected = assigned == lo.name || assigned == id
+            val isCurrentlyEquipped = LoadoutManager.currentLoadoutId == lo.id
 
             val lore = mutableListOf(
-                "§7Loadout Slot: §fSlot $loadoutNum",
-                "§7Pet: §6${lo.petName ?: "None"}",
-                ""
+                "§7Loadout Slot: §fSlot $loadoutNum"
             )
 
-            if (isSelected) {
-                lore.add("§a✓ Currently Selected for ${target.displayName}")
-                lore.add("")
-                lore.add("§eClick to re-select!")
-            } else {
-                lore.add("§eClick to assign this loadout!")
+            if (!lo.petName.isNullOrBlank()) {
+                lore.add("§7Active Pet: §6${lo.petName}")
             }
 
-            val iconItem = when (loadoutNum) {
-                1 -> Items.NETHERITE_CHESTPLATE
-                2 -> Items.DIAMOND_CHESTPLATE
-                3 -> Items.GOLDEN_CHESTPLATE
-                4 -> Items.IRON_CHESTPLATE
-                5 -> Items.CHAINMAIL_CHESTPLATE
-                6 -> Items.LEATHER_CHESTPLATE
-                7 -> Items.DIAMOND_HELMET
-                8 -> Items.GOLDEN_HELMET
-                9 -> Items.IRON_HELMET
-                10 -> Items.CHAINMAIL_HELMET
-                11 -> Items.LEATHER_HELMET
-                else -> Items.TURTLE_HELMET
+            lore.add("")
+
+            if (isSelected) {
+                lore.add("§a✓ Currently Assigned for ${target.displayName}")
             }
+            if (isCurrentlyEquipped) {
+                lore.add("§b● Currently Equipped In-Game")
+            }
+
+            lore.add("")
+            lore.add("§eLeft-Click: §fSelect this loadout")
+            lore.add("§bRight-Click: §fEquip this loadout now")
+
+            val iconItem = getLoadoutItem(lo, loadoutNum)
 
             return createItem(
                 iconItem,
                 "§aLoadout #$loadoutNum: §f${lo.name}",
                 lore,
-                glint = isSelected
+                glint = isSelected || isCurrentlyEquipped
             )
         }
 
@@ -570,6 +605,12 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
                     val loadoutNum = loadoutEntry.second
                     val targetLoadoutId = "loadout_$loadoutNum"
 
+                    if (mouseButton == 1) { // Right Click: Equip immediately in-game!
+                        LoadoutManager.swapTo(targetLoadoutId, "GUI Direct Equip")
+                        return true
+                    }
+
+                    // Left Click: Assign loadout to target
                     when (target) {
                         ConfigTarget.TOGGLE_A -> {
                             LoadoutManager.loadoutAId = targetLoadoutId

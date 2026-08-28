@@ -271,6 +271,9 @@ data class Loadout(
     var loadoutSlot: Int = 1, // Skyblock Loadout Slot 1..12 (maps to LOADOUT_SLOTS[loadoutSlot - 1])
     var openCommand: String = "/loadouts",
     var petName: String? = null,
+    var itemType: String? = null,
+    var skullTexture: String? = null,
+    var loreLines: List<String> = emptyList(),
     var slot: Int? = null, // Hotbar slot (0..8)
     var commands: MutableList<String> = mutableListOf(),
     var delayMs: Long = 100L
