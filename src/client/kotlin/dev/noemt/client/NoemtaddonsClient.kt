@@ -334,7 +334,7 @@ object NoemtaddonsClient : ClientModInitializer {
                                     for ((id, lo) in dev.noemt.client.features.loadout.LoadoutManager.loadouts) {
                                         val activeIndicator = if (id == curr) " &a[ACTIVE]" else ""
                                         ChatUtils.modMessage("&e• &6${lo.name} &7(&b$id&7)$activeIndicator")
-                                        if (lo.wardrobeSlot != null) ChatUtils.modMessage("    &7Wardrobe Slot: &f${lo.wardrobeSlot}")
+                                        ChatUtils.modMessage("    &7SkyBlock Loadout: &fSlot ${lo.loadoutSlot}")
                                         if (lo.petName != null) ChatUtils.modMessage("    &7Pet: &f${lo.petName}")
                                         if (lo.commands.isNotEmpty()) ChatUtils.modMessage("    &7Commands: &f${lo.commands.joinToString()}")
                                     }

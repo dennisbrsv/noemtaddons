@@ -107,17 +107,29 @@ data class ConditionContext(
     val location: String? = null
 )
 
+object SkyblockLoadoutConstants {
+    val LOADOUT_MENU_REGEX = Regex("""^\(\d+/\d+\) Loadouts$""")
+    val LOADOUT_SLOTS = listOf(
+        14, 15, 16,
+        23, 24, 25,
+        32, 33, 34,
+        41, 42, 43
+    )
+}
+
 data class Loadout(
     val id: String,
     var name: String,
-    var openCommand: String = "/wardrobe",
-    var guiSlot: Int? = null,
-    var wardrobeSlot: Int? = null,
+    var loadoutSlot: Int = 1, // Skyblock Loadout Slot 1..12 (maps to LOADOUT_SLOTS[loadoutSlot - 1])
+    var openCommand: String = "/loadouts",
     var petName: String? = null,
-    var slot: Int? = null,
+    var slot: Int? = null, // Hotbar slot (0..8)
     var commands: MutableList<String> = mutableListOf(),
     var delayMs: Long = 100L
-)
+) {
+    val containerSlot: Int
+        get() = SkyblockLoadoutConstants.LOADOUT_SLOTS.getOrElse(loadoutSlot - 1) { 14 }
+}
 
 data class LoadoutRule(
     val id: String,

@@ -25,7 +25,6 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
     private var ruleNameBox: EditBox? = null
     private var patternBox: EditBox? = null
     private var customNameBox: EditBox? = null
-    private var customSkullBox: EditBox? = null
     private var cooldownBox: EditBox? = null
 
     private var builderConditionType = "AIM" // "AIM", "CHAT", "PROXIMITY", "LOCATION"
@@ -37,20 +36,20 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
     override fun init() {
         clearWidgets()
-        val cardWidth = (width * 0.85f).coerceIn(440f, 720f).toInt()
-        val cardHeight = (height * 0.8f).coerceIn(280f, 520f).toInt()
+        val cardWidth = (width * 0.88f).coerceIn(460f, 760f).toInt()
+        val cardHeight = (height * 0.82f).coerceIn(300f, 540f).toInt()
         val cardX = (width - cardWidth) / 2
         val cardY = (height - cardHeight) / 2
 
         // Top Navigation Tab Buttons
-        val tabWidth = 95
+        val tabWidth = 100
         val tabHeight = 20
         var tabStartX = cardX + 16
         val tabY = cardY + 34
 
         for (tab in Tab.values()) {
             val label = when (tab) {
-                Tab.LOADOUTS -> "📦 Loadouts"
+                Tab.LOADOUTS -> "📦 Loadouts (1-12)"
                 Tab.RULES -> "⚡ Active Rules"
                 Tab.BUILDER -> "🛠️ New Rule"
                 Tab.TIMING -> "⏱️ Settings"
@@ -170,7 +169,7 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
         // 1. Rule Name
         val nameBox = EditBox(font, formX, formY, 220, 18, Component.literal("Rule Name"))
-        nameBox.value = "Auto DPS Rule"
+        nameBox.value = "Auto DPS Swap"
         addRenderableWidget(nameBox)
         ruleNameBox = nameBox
         formY += 26
@@ -192,7 +191,6 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
         // 3. Sub-options depending on condition type
         if (builderConditionType in listOf("AIM", "PROXIMITY")) {
-            // Category Buttons
             val cats = listOf(
                 MobCategory.BLOOD_MOB to "Blood Mob",
                 MobCategory.WATCHER to "Watcher",
@@ -218,14 +216,12 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
             }
             formY += 26
 
-            // Custom Name filter
             val customBox = EditBox(font, formX, formY, 220, 18, Component.literal("Name Filter (Optional)"))
             customBox.setHint(Component.literal("e.g. Livid, Necron, Shadow Assassin"))
             addRenderableWidget(customBox)
             customNameBox = customBox
             formY += 26
         } else if (builderConditionType == "CHAT") {
-            // Chat Match Mode Buttons
             val modes = listOf(MatchType.CONTAINS to "CONTAINS", MatchType.STARTS_WITH to "STARTS_WITH", MatchType.REGEX to "REGEX")
             var mX = formX
             for ((modeEnum, modeLabel) in modes) {
@@ -240,7 +236,6 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
             }
             formY += 26
 
-            // Pattern Box
             val pBox = EditBox(font, formX, formY, 260, 18, Component.literal("Chat Pattern"))
             pBox.value = "[BOSS] "
             addRenderableWidget(pBox)
@@ -341,8 +336,8 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
         // Dark translucent background
         graphics.fill(0, 0, width, height, Color(0, 0, 0, 195).rgb)
 
-        val cardWidth = (width * 0.85f).coerceIn(440f, 720f).toInt()
-        val cardHeight = (height * 0.8f).coerceIn(280f, 520f).toInt()
+        val cardWidth = (width * 0.88f).coerceIn(460f, 760f).toInt()
+        val cardHeight = (height * 0.82f).coerceIn(300f, 540f).toInt()
         val cardX = (width - cardWidth) / 2
         val cardY = (height - cardHeight) / 2
 
@@ -356,8 +351,8 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
         // Header Title
         val currentLo = LoadoutManager.getCurrentLoadout()?.name ?: "None"
-        graphics.text(font, "§b§lNoemtAddons §8• §fLoadout & Conditional Swapper §c[CHEAT]", cardX + 16, cardY + 12, Color.WHITE.rgb, true)
-        graphics.text(font, "§7Active: §e$currentLo §8| §7Toggle: §b${LoadoutManager.loadoutAId} §7⇄ §b${LoadoutManager.loadoutBId}", cardX + 16, cardY + 22, Color.LIGHT_GRAY.rgb, false)
+        graphics.text(font, "§b§lNoemtAddons §8• §fSkyBlock Loadouts & Conditional Swapper §c[CHEAT]", cardX + 16, cardY + 12, Color.WHITE.rgb, true)
+        graphics.text(font, "§7Active: §e$currentLo §8| §7Toggle Pair: §b${LoadoutManager.loadoutAId} §7⇄ §b${LoadoutManager.loadoutBId} §8| §7Command: §e/loadouts", cardX + 16, cardY + 22, Color.LIGHT_GRAY.rgb, false)
 
         // Subheader line
         graphics.fill(cardX + 16, cardY + 58, cardX + cardWidth - 16, cardY + 59, Color(50, 65, 90, 255).rgb)
@@ -379,14 +374,13 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
         for (lo in loadoutList) {
             if (rowY in (cardY + 60)..(cardY + cardHeight - 55)) {
-                // Background row card
                 val isActive = LoadoutManager.currentLoadoutId == lo.id
                 val rowBg = if (isActive) Color(30, 45, 70, 200).rgb else Color(22, 28, 42, 180).rgb
                 graphics.fill(cardX + 16, rowY, cardX + cardWidth - 16, rowY + 38, rowBg)
 
                 val activeTag = if (isActive) " §a[EQUIPPED]" else ""
                 graphics.text(font, "§e§l${lo.name} §7(${lo.id})$activeTag", cardX + 24, rowY + 6, Color.WHITE.rgb, true)
-                graphics.text(font, "§7Wardrobe Slot: §f${lo.wardrobeSlot ?: "None"} §8| §7Hotbar: §f${lo.slot?.let { it + 1 } ?: "None"} §8| §7Pet: §f${lo.petName ?: "None"}", cardX + 24, rowY + 20, Color.LIGHT_GRAY.rgb, false)
+                graphics.text(font, "§7SkyBlock Loadout: §fSlot ${lo.loadoutSlot} §8(Chest slot ${lo.containerSlot}) | §7Hotbar: §f${lo.slot?.let { it + 1 } ?: "None"} | §7Pet: §f${lo.petName ?: "None"}", cardX + 24, rowY + 20, Color.LIGHT_GRAY.rgb, false)
             }
             rowY += 46
         }
@@ -448,11 +442,11 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
     private fun renderTimingTab(graphics: GuiGraphicsExtractor, cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
         var sY = cardY + 110
-        graphics.text(font, "§e§lAutomated GUI Swap Pipeline Timing:", cardX + 20, sY, Color.WHITE.rgb, true)
+        graphics.text(font, "§e§lAutomated SkyBlock /loadouts Swapping Pipeline:", cardX + 20, sY, Color.WHITE.rgb, true)
         sY += 16
-        graphics.text(font, "§7• Step 1: Pre-Command Delay: §f~150ms §7(randomized 130-175ms) ➜ Sends /wardrobe", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
+        graphics.text(font, "§7• Step 1: Pre-Command Delay: §f~150ms §7(randomized 130-175ms) ➜ Sends /loadouts", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
         sY += 14
-        graphics.text(font, "§7• Step 2: GUI Container Open: §f~100ms §7(randomized 85-125ms) ➜ Clicks Target Slot", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
+        graphics.text(font, "§7• Step 2: Container Open Wait: §f~100ms §7(randomized 85-125ms) ➜ Clicks Target Slot [14..43]", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
         sY += 14
         graphics.text(font, "§7• Step 3: Post-Click Close: §f~100ms §7(randomized 85-125ms) ➜ Closes Container & Swaps Slot", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
         sY += 22

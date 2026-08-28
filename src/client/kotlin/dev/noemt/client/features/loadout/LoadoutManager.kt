@@ -8,12 +8,12 @@ import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.remote.RemoteWebSocketClient
 import dev.noemt.client.utils.ChatUtils
 import dev.noemt.client.utils.PlayerUtils
-import dev.noemt.client.utils.ThreadUtils
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.inventory.ContainerInput
+import net.minecraft.world.inventory.Slot
 import java.io.File
 import kotlin.random.Random
 
@@ -44,6 +44,12 @@ object LoadoutManager {
 
     var loadoutAId: String = "loadout_1"
     var loadoutBId: String = "loadout_2"
+
+    // State tracking for in-menu detection
+    var inLoadoutMenu: Boolean = false
+        private set
+    private var pendingAutoClose: Boolean = false
+    private var lastManualClick: Long = 0L
 
     // Automated GUI Swap State Machine
     private enum class SwapStage {
@@ -101,7 +107,7 @@ object LoadoutManager {
         pendingLoadout = loadout
         pendingReason = reason
 
-        ChatUtils.modMessage("&b[Loadout] &aSwapping to: &e${loadout.name} &7(Trigger: &f$reason&7)")
+        ChatUtils.modMessage("&b[Loadout] &aSwapping to: &e${loadout.name} &7(Slot ${loadout.loadoutSlot} | Trigger: &f$reason&7)")
 
         // Play feedback sound if enabled
         if (ConfigManager.config.loadout.playSound) {
@@ -114,12 +120,13 @@ object LoadoutManager {
         val payload = JsonObject().apply {
             addProperty("loadoutId", id)
             addProperty("loadoutName", loadout.name)
+            addProperty("slot", loadout.loadoutSlot)
             addProperty("reason", reason)
             addProperty("timestamp", System.currentTimeMillis())
         }
         RemoteWebSocketClient.sendEvent("LOADOUT_SWAP", payload)
 
-        // Stage 1: Pre /loadout execution -> 150ms-ish delay (randomized 130ms - 170ms)
+        // Stage 1: Pre /loadouts execution -> 150ms-ish delay (randomized 130ms - 175ms)
         val preDelay = Random.nextLong(130, 175)
         stageTargetTimeMs = System.currentTimeMillis() + preDelay
         currentStage = SwapStage.PRE_CMD_WAIT
@@ -140,11 +147,11 @@ object LoadoutManager {
         when (currentStage) {
             SwapStage.PRE_CMD_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    // Send open command (e.g. /wardrobe or /loadout)
-                    val cmd = loadout.openCommand.takeIf { it.isNotBlank() } ?: "/wardrobe"
+                    // Send /loadouts command
+                    val cmd = loadout.openCommand.takeIf { it.isNotBlank() } ?: "/loadouts"
                     sendClientCommand(cmd)
 
-                    // Stage 2: Wait for GUI to open (with 2500ms fallback timeout)
+                    // Stage 2: Wait for /loadouts GUI to open (with 2500ms fallback timeout)
                     guiWaitTimeoutMs = now + 2500L
                     currentStage = SwapStage.WAITING_GUI_OPEN
                 }
@@ -152,14 +159,13 @@ object LoadoutManager {
 
             SwapStage.WAITING_GUI_OPEN -> {
                 val isGuiOpen = mc.screen is AbstractContainerScreen<*> && player.containerMenu != player.inventoryMenu
-                if (isGuiOpen) {
+                if (isGuiOpen || inLoadoutMenu) {
                     // Stage 3: GUI open -> 100ms-ish delay (randomized 85ms - 125ms)
                     val guiOpenDelay = Random.nextLong(85, 125)
                     stageTargetTimeMs = now + guiOpenDelay
                     currentStage = SwapStage.GUI_OPEN_WAIT
                 } else if (now >= guiWaitTimeoutMs) {
-                    // Timeout fallback: Skip GUI click and run fallback actions
-                    ChatUtils.modMessage("&e[Loadout] GUI open timed out, executing direct actions.")
+                    ChatUtils.modMessage("&e[Loadout] /loadouts GUI open timed out, executing direct actions.")
                     currentStage = SwapStage.POST_ACTIONS
                 }
             }
@@ -168,12 +174,10 @@ object LoadoutManager {
                 if (now >= stageTargetTimeMs) {
                     val containerId = player.containerMenu.containerId
 
-                    // Calculate target slot: Custom guiSlot or Hypixel wardrobe slot calculation
-                    val targetSlot = loadout.guiSlot
-                        ?: if (loadout.wardrobeSlot != null) (35 + loadout.wardrobeSlot!!)
-                        else 36
+                    // Target slot in 54-slot chest container: slots [14,15,16, 23,24,25, 32,33,34, 41,42,43]
+                    val targetSlot = loadout.containerSlot
 
-                    // Click the new loadout slot
+                    // Click the loadout slot
                     mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
 
                     // Stage 4: Post-click delay -> 100ms-ish delay (randomized 85ms - 125ms)
@@ -185,7 +189,7 @@ object LoadoutManager {
 
             SwapStage.POST_CLICK_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    // Stage 5: Close the GUI
+                    // Stage 5: Close the /loadouts GUI
                     player.closeContainer()
                     mc.setScreen(null)
 
@@ -217,6 +221,47 @@ object LoadoutManager {
 
             SwapStage.IDLE -> {}
         }
+    }
+
+    fun onPacketOpenScreen(title: String) {
+        inLoadoutMenu = title.matches(SkyblockLoadoutConstants.LOADOUT_MENU_REGEX)
+    }
+
+    fun onPacketCloseScreen() {
+        inLoadoutMenu = false
+        pendingAutoClose = false
+    }
+
+    // In-Menu fast keybind click (slots 0..11 corresponding to Loadouts 1..12)
+    fun clickMenuSlot(index: Int, autoClose: Boolean = true) {
+        val player = mc.player ?: return
+        if (index !in 0..11) return
+        val slot = SkyblockLoadoutConstants.LOADOUT_SLOTS[index]
+        if (!isSlotEquipable(slot)) return
+
+        val containerId = player.containerMenu.containerId
+        mc.gameMode?.handleContainerInput(containerId, slot, 0, ContainerInput.PICKUP, player)
+        lastManualClick = System.currentTimeMillis()
+
+        // Track in memory
+        val targetLoadout = loadouts.values.find { it.loadoutSlot == (index + 1) }
+        if (targetLoadout != null) {
+            if (currentLoadoutId != targetLoadout.id) {
+                previousLoadoutId = currentLoadoutId
+            }
+            currentLoadoutId = targetLoadout.id
+        }
+
+        if (autoClose) {
+            player.closeContainer()
+            pendingAutoClose = true
+        }
+    }
+
+    private fun isSlotEquipable(slot: Int): Boolean {
+        val player = mc.player ?: return false
+        val itemSlot = player.containerMenu.getSlot(slot).takeIf(Slot::hasItem) ?: return false
+        return !itemSlot.item.isEmpty
     }
 
     private fun resetSwap() {
@@ -285,8 +330,8 @@ object LoadoutManager {
         loadouts["loadout_1"] = Loadout(
             id = "loadout_1",
             name = "Clear / Speed",
-            openCommand = "/wardrobe",
-            wardrobeSlot = 1,
+            loadoutSlot = 1,
+            openCommand = "/loadouts",
             slot = 0,
             delayMs = 100L
         )
@@ -294,8 +339,8 @@ object LoadoutManager {
         loadouts["loadout_2"] = Loadout(
             id = "loadout_2",
             name = "Boss / DPS",
-            openCommand = "/wardrobe",
-            wardrobeSlot = 2,
+            loadoutSlot = 2,
+            openCommand = "/loadouts",
             slot = 1,
             delayMs = 100L
         )
@@ -303,9 +348,18 @@ object LoadoutManager {
         loadouts["loadout_3"] = Loadout(
             id = "loadout_3",
             name = "Tank / Survivability",
-            openCommand = "/wardrobe",
-            wardrobeSlot = 3,
+            loadoutSlot = 3,
+            openCommand = "/loadouts",
             slot = 2,
+            delayMs = 100L
+        )
+
+        loadouts["loadout_4"] = Loadout(
+            id = "loadout_4",
+            name = "Utility / Magic",
+            loadoutSlot = 4,
+            openCommand = "/loadouts",
+            slot = 3,
             delayMs = 100L
         )
 
@@ -379,7 +433,7 @@ object LoadoutManager {
                 }
             }
         } catch (e: Exception) {
-            // Use defaults if rules format changed
+            // Use defaults
         }
     }
 

@@ -34,7 +34,17 @@ object LoadoutModule : Module {
     override fun init() {
         LoadoutManager.init()
 
-        // 1. Chat Message Trigger
+        // 1. Screen Packet Detection for /loadouts menu
+        register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Pre> {
+            val packet = event.packet
+            if (packet is net.minecraft.network.protocol.game.ClientboundOpenScreenPacket) {
+                LoadoutManager.onPacketOpenScreen(packet.title.string)
+            } else if (packet is net.minecraft.network.protocol.game.ClientboundContainerClosePacket) {
+                LoadoutManager.onPacketCloseScreen()
+            }
+        }
+
+        // 2. Chat Message Trigger
         register<ChatMessageEvent> {
             if (!ConfigManager.config.loadout.enabled) return@register
             val text = event.unformattedText
