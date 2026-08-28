@@ -176,6 +176,7 @@ def createLoaderJar(String name, String flavor) {
 		from("src/client/resources/fabric.mod.loader.json") {
 			rename { "fabric.mod.json" }
 		}
+		from("src/client/resources/noemtaddons.client.mixins.json")
 		archiveBaseName.set("noemtaddons-${flavor}-loader")
 		archiveClassifier.set("")
 		destinationDirectory.set(file("${layout.buildDirectory.get().asFile}/libs"))

@@ -243,6 +243,27 @@ object RemoteWebSocketClient : Module {
                     }
                 }
 
+                "PATHFIND", "GOTO" -> {
+                    val x = json.get("x")?.asDouble ?: return
+                    val y = json.get("y")?.asDouble ?: return
+                    val z = json.get("z")?.asDouble ?: return
+                    dev.noemt.client.features.pathfinder.SkyHanniPathfinder.pathTo(x, y, z)
+                }
+
+                "PATHFIND_STOP" -> {
+                    dev.noemt.client.features.pathfinder.SkyHanniPathfinder.stop()
+                }
+
+                "KILL", "EXIT", "SHUTDOWN", "CLOSE_GAME" -> {
+                    mc.execute {
+                        try {
+                            mc.stop()
+                        } catch (e: Throwable) {
+                            kotlin.system.exitProcess(0)
+                        }
+                    }
+                }
+
                 else -> {
                     // Custom remote event
                     val customName = json.get("action")?.asString ?: type

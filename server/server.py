@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
 """
-NoemtAddons Control Plane & CI/CD Mod-Loader Server
-===================================================
-1. Authenticated Dashboard:
-   - Protected by username 'nom' and dynamically generated password
-   - Bespoke obsidian telemetry UI with live client monitoring & remote commands
-   - Real-time CI/CD build manager & git auto-deployer
-2. HTTP Endpoints:
-   - GET /loaders/noemtaddons-legit.jar
-   - GET /loaders/noemtaddons-cheat.jar
-   - GET /changelog
-   - GET /api/version
-   - POST /api/webhook (GitHub Webhook trigger)
-   - POST /api/trigger-build (Dashboard authenticated build trigger)
-3. WebSocket Server:
-   - Real-time telemetry, client packet synchronization, remote control, and pathfinder navigation.
-4. Discord Integration:
-   - High-fidelity rich embeds for automated build deployment and telemetry alerts.
+Noemt Cloud Console & CI/CD Mod-Loader Server
+============================================
+Google Cloud / Material Design 3 Control Plane:
+- Authenticated operator access (nom:<generated_password>)
+- Live telemetry stream & remote commands
+- Remote client emergency failsafe (close game remotely)
+- Dynamic mod loader sync & automated git pull CI/CD
 """
 
 import asyncio
@@ -42,7 +32,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
     level=logging.INFO
 )
-logger = logging.getLogger("NoemtServer")
+logger = logging.getLogger("NoemtCloud")
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -62,7 +52,7 @@ active_sessions: set = set()
 ADMIN_USER = "nom"
 ADMIN_PASSWORD = ""
 IS_BUILDING: bool = False
-LAST_BUILD_STATUS: str = "Ready"
+LAST_BUILD_STATUS: str = "Healthy"
 LAST_BUILD_TIME: str = "N/A"
 LAST_BUILD_OUTPUT: str = "No builds executed yet."
 
@@ -82,7 +72,6 @@ def init_auth(custom_password: Optional[str] = None):
         ADMIN_PASSWORD = secrets.token_urlsafe(12)
         AUTH_FILE.write_text(json.dumps({"username": ADMIN_USER, "password": ADMIN_PASSWORD}, indent=2), encoding="utf-8")
 
-    # Generate persistent session hash
     token = hashlib.sha256(f"{ADMIN_USER}:{ADMIN_PASSWORD}".encode()).hexdigest()
     active_sessions.add(token)
 
@@ -93,6 +82,18 @@ def get_jar_path(flavor: str) -> Optional[Path]:
         JARS_DIR / f"noemtaddons-{flavor}.jar",
         Path(__file__).parent / "jars" / f"noemtaddons-{flavor}.jar",
         Path(__file__).parent / "jars" / f"noemtaddons-1.0.0-{flavor}.jar",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file():
+            return p
+    return None
+
+
+def get_loader_jar_path(flavor: str) -> Optional[Path]:
+    candidates = [
+        JARS_DIR / f"noemtaddons-{flavor}-loader-1.0.0.jar",
+        JARS_DIR / f"noemtaddons-{flavor}-loader.jar",
+        Path(__file__).parent / "jars" / f"noemtaddons-{flavor}-loader.jar",
     ]
     for p in candidates:
         if p.exists() and p.is_file():
@@ -151,15 +152,15 @@ def compute_version_metadata() -> dict:
 
 
 # ==============================================================================
-# High-Fidelity Discord Webhook Notifications
+# Discord Webhook Notifications
 # ==============================================================================
 
-def send_discord_webhook(webhook_url: str, title: str, description: str, color: int, fields: list, footer: str = "NoemtAddons CI/CD Control Plane"):
+def send_discord_webhook(webhook_url: str, title: str, description: str, color: int, fields: list, footer: str = "Noemt Cloud CI/CD"):
     if not webhook_url:
         return
 
     payload = {
-        "username": "NoemtAddons CI/CD",
+        "username": "Noemt Cloud Pipeline",
         "avatar_url": "https://cdn-icons-png.flaticon.com/512/919/919836.png",
         "embeds": [
             {
@@ -183,7 +184,7 @@ def send_discord_webhook(webhook_url: str, title: str, description: str, color: 
                 data=json.dumps(payload).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": "NoemtAddons-Server/1.0"
+                    "User-Agent": "NoemtCloud-Server/1.0"
                 }
             )
             with urllib.request.urlopen(req, timeout=8) as resp:
@@ -256,7 +257,7 @@ class AutoBuilder:
             return False
 
         IS_BUILDING = True
-        LAST_BUILD_STATUS = "Compiling..."
+        LAST_BUILD_STATUS = "Building..."
         start_time = time.time()
         logger.info(f"🔨 Initiating build pipeline (Source: {trigger_source})...")
 
@@ -278,14 +279,14 @@ class AutoBuilder:
         changelog_path = Path(__file__).parent / "changelog.txt"
         changelog_path.write_text(formatted_changelog, encoding="utf-8")
 
-        # 3. Discord Notification: Build In Progress
+        # 3. Discord Notification
         if DISCORD_WEBHOOK:
             commit_lines = "\n".join([f"• `{c['hash']}` {c['message']} *(by {c['author']})*" for c in (commits or [{'hash': short_hash, 'message': latest_msg, 'author': author}])[:5]])
             send_discord_webhook(
                 DISCORD_WEBHOOK,
                 title=f"⚙️ Build Pipeline Triggered (`{short_hash}`)",
                 description=f"**Trigger:** `{trigger_source}`\n**Branch:** `{GIT_BRANCH}`\n\n**Commit Details:**\n{commit_lines}",
-                color=0xFFB830,
+                color=0xFBBC04,
                 fields=[
                     {"name": "Status", "value": "⏳ Executing Gradle build & remapping...", "inline": True},
                     {"name": "Triggered By", "value": trigger_source, "inline": True}
@@ -305,14 +306,13 @@ class AutoBuilder:
 
         if build_res.returncode == 0:
             IS_BUILDING = False
-            LAST_BUILD_STATUS = "Success"
+            LAST_BUILD_STATUS = "Healthy"
             logger.info(f"✅ Build pipeline completed in {build_duration}s!")
 
             meta = compute_version_metadata()
             legit_size_kb = meta['endpoints']['legit']['size'] / 1024
             cheat_size_kb = meta['endpoints']['cheat']['size'] / 1024
 
-            # 5. Discord Webhook: Build Success
             if DISCORD_WEBHOOK:
                 fields = [
                     {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
@@ -325,13 +325,12 @@ class AutoBuilder:
                 ]
                 send_discord_webhook(
                     DISCORD_WEBHOOK,
-                    title=f"🚀 NoemtAddons Deployed Successfully (`{short_hash}`)",
-                    description=f"**New version compiled & ready for instant client sync.**\n\n> 📝 *\"{latest_msg}\"*",
-                    color=0x00F5A0,
+                    title=f"🚀 Deployment Succeeded (`{short_hash}`)",
+                    description=f"**New version deployed to Noemt Cloud.**\n\n> 📝 *\"{latest_msg}\"*",
+                    color=0x34A853,
                     fields=fields
                 )
 
-            # 6. Broadcast to Connected Minecraft Players
             await send_to_target("all", {
                 "type": "MESSAGE",
                 "message": f"&b[NoemtAddons] &aServer updated to build &e{short_hash}&a! Restart game when ready."
@@ -354,7 +353,7 @@ class AutoBuilder:
                     DISCORD_WEBHOOK,
                     title=f"❌ Build Failed for `{short_hash}`",
                     description=f"**Compilation error encountered after {build_duration}s:**\n```\n{error_tail[:1000]}\n```",
-                    color=0xFF3860,
+                    color=0xEA4335,
                     fields=[
                         {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
                         {"name": "🔨 Commit", "value": f"`{short_hash}` by {author}", "inline": True}
@@ -411,7 +410,7 @@ async def git_polling_loop():
 
 
 # ==============================================================================
-# WebSocket Frame Encoding / Decoding (RFC 6455)
+# WebSocket Frame Handling (RFC 6455)
 # ==============================================================================
 
 async def read_ws_frame(reader: asyncio.StreamReader) -> Tuple[int, bytes]:
@@ -532,7 +531,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
     if not clean_path:
         clean_path = "/"
 
-    # 1. GitHub Webhook Trigger (Public / Secret)
+    # 1. GitHub Webhook Trigger
     if method == "POST" and clean_path in ("/api/webhook", "/api/github-webhook"):
         content_len = int(headers.get("content-length", 0))
         if content_len > 0:
@@ -542,20 +541,20 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         send_http_response(writer, 200, "application/json", b'{"status":"Build triggered"}')
         return
 
-    # 2. Version Metadata API (Public)
+    # 2. Version Metadata API
     if clean_path == "/api/version":
         meta = compute_version_metadata()
         send_http_response(writer, 200, "application/json", json.dumps(meta, indent=2).encode("utf-8"))
         return
 
-    # 3. Changelog (Public)
+    # 3. Changelog
     if clean_path in ("/changelog", "/api/changelog"):
         changelog_p = Path(__file__).parent / "changelog.txt"
         content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.0"
         send_http_response(writer, 200, "text/plain; charset=utf-8", content.encode("utf-8"))
         return
 
-    # 4. Mod JAR Downloads (Public)
+    # 4. Mod Payload JAR Downloads (Requested by loaders on game startup)
     if clean_path in ("/loaders/noemtaddons-legit.jar", "/download/legit", "/download/noemtaddons-legit.jar"):
         serve_jar_file(writer, "legit", client_ip)
         return
@@ -564,7 +563,16 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         serve_jar_file(writer, "cheat", client_ip)
         return
 
-    # 5. Login POST Request
+    # 5. Bootstrap Loader JAR Downloads (The 6.7KB files given to users to put in .minecraft/mods)
+    if clean_path in ("/download/loaders/legit", "/loaders/noemtaddons-legit-loader.jar", "/loaders/legit-loader.jar"):
+        serve_loader_stub_file(writer, "legit", client_ip)
+        return
+
+    if clean_path in ("/download/loaders/cheat", "/loaders/noemtaddons-cheat-loader.jar", "/loaders/cheat-loader.jar"):
+        serve_loader_stub_file(writer, "cheat", client_ip)
+        return
+
+    # 6. Login POST Request
     if method == "POST" and clean_path == "/login":
         content_len = int(headers.get("content-length", 0))
         body = (await reader.readexactly(content_len)).decode("utf-8", errors="ignore") if content_len > 0 else ""
@@ -575,7 +583,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         if username == ADMIN_USER and password == ADMIN_PASSWORD:
             session_token = hashlib.sha256(f"{username}:{password}".encode()).hexdigest()
             active_sessions.add(session_token)
-            logger.info(f"🔑 Successful dashboard login from {client_ip}")
+            logger.info(f"🔑 Successful Google Cloud console login from {client_ip}")
             headers_out = [
                 "HTTP/1.1 302 Found",
                 "Location: /",
@@ -588,11 +596,11 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
             return
         else:
             logger.warning(f"🚫 Failed login attempt from {client_ip} (user: '{username}')")
-            html = render_login_page(error="Invalid credentials. Please verify username & password.")
+            html = render_login_page(error="Invalid credentials. Verify your Operator ID and Key.")
             send_http_response(writer, 401, "text/html; charset=utf-8", html.encode("utf-8"))
             return
 
-    # 6. Logout GET
+    # 7. Logout GET
     if clean_path == "/logout":
         headers_out = [
             "HTTP/1.1 302 Found",
@@ -605,7 +613,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         writer.close()
         return
 
-    # 7. Authenticated Dashboard Remote Action POST
+    # 8. Authenticated Dashboard Remote Action POST
     if method == "POST" and clean_path == "/api/action":
         if not is_authenticated(headers):
             send_http_response(writer, 401, "application/json", b'{"error":"Unauthorized"}')
@@ -618,13 +626,14 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         text = form_data.get("text", [""])[0]
 
         if action == "build":
-            asyncio.create_task(AutoBuilder.run_build(trigger_source=f"Dashboard ({ADMIN_USER})"))
-            send_http_response(writer, 200, "application/json", b'{"status":"Build triggered"}')
-            return
+            asyncio.create_task(AutoBuilder.run_build(trigger_source=f"Cloud Console ({ADMIN_USER})"))
+        elif action in ("kill", "shutdown", "close_game"):
+            logger.warning(f"🛑 Remote failsafe triggered: Closing Minecraft for target '{target}'")
+            await send_to_target(target, {"type": "SHUTDOWN", "reason": "Remote operator failsafe"})
         elif action == "msg" and text:
             await send_to_target(target, {"type": "MESSAGE", "message": text})
         elif action == "title" and text:
-            await send_to_target(target, {"type": "TITLE", "title": text, "subtitle": "Alert from Noemt Control"})
+            await send_to_target(target, {"type": "TITLE", "title": text, "subtitle": "Cloud Console Alert"})
         elif action == "chat" and text:
             await send_to_target(target, {"type": "CHAT", "text": text})
 
@@ -633,7 +642,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         writer.close()
         return
 
-    # 8. Dashboard GET Route (Protected)
+    # 9. Dashboard GET Route (Protected)
     if clean_path in ("/", "/dashboard"):
         if not is_authenticated(headers):
             html = render_login_page()
@@ -659,7 +668,7 @@ def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, client_ip: str):
         return
 
     file_size = jar_path.stat().st_size
-    logger.info(f"📤 Serving {flavor} jar ({file_size} bytes) to {client_ip}")
+    logger.info(f"📤 Serving {flavor} payload jar ({file_size} bytes) to {client_ip}")
 
     headers = [
         "HTTP/1.1 200 OK",
@@ -673,6 +682,34 @@ def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, client_ip: str):
     writer.write("\r\n".join(headers).encode("utf-8"))
 
     with open(jar_path, "rb") as f:
+        while chunk := f.read(65536):
+            writer.write(chunk)
+    
+    writer.close()
+
+
+def serve_loader_stub_file(writer: asyncio.StreamWriter, flavor: str, client_ip: str):
+    loader_path = get_loader_jar_path(flavor)
+    if not loader_path or not loader_path.exists():
+        logger.warning(f"Requested {flavor} loader jar not found for {client_ip}")
+        send_http_response(writer, 404, "text/plain", f"Error: {flavor} loader build not found on server.".encode("utf-8"))
+        return
+
+    file_size = loader_path.stat().st_size
+    logger.info(f"📤 Serving {flavor} bootstrap loader jar ({file_size} bytes) to {client_ip}")
+
+    headers = [
+        "HTTP/1.1 200 OK",
+        "Content-Type: application/java-archive",
+        f"Content-Length: {file_size}",
+        f"Content-Disposition: attachment; filename=\"noemtaddons-{flavor}-loader.jar\"",
+        "Access-Control-Allow-Origin: *",
+        "Connection: close",
+        "\r\n"
+    ]
+    writer.write("\r\n".join(headers).encode("utf-8"))
+
+    with open(loader_path, "rb") as f:
         while chunk := f.read(65536):
             writer.write(chunk)
     
@@ -694,97 +731,77 @@ def send_http_response(writer: asyncio.StreamWriter, status_code: int, content_t
 
 
 # ==============================================================================
-# Bespoke Frontend UI Renderer (Obsidian Cockpit Aesthetic)
+# Google Cloud / Material Design 3 UI Renderers
 # ==============================================================================
 
 def render_login_page(error: Optional[str] = None) -> str:
-    error_html = f'<div class="alert-error"><span>⚠️</span> {error}</div>' if error else ""
+    error_html = f'<div class="google-alert-error"><span>⚠️</span> {error}</div>' if error else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>NoemtAddons Control Plane • Security Access</title>
+    <title>Sign in - Noemt Cloud Accounts</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg: #090b10;
-            --surface: #121622;
-            --surface-hover: #181e2e;
-            --border: #1f273b;
-            --accent: #ffb830;
-            --accent-glow: rgba(255, 184, 48, 0.25);
-            --mint: #00f5a0;
-            --text: #edf2f7;
-            --text-dim: #718096;
-            --danger: #ff4757;
+            --google-blue: #8ab4f8;
+            --google-blue-hover: #aecbfa;
+            --google-bg: #131314;
+            --google-surface: #1e1f20;
+            --google-surface-variant: #28292a;
+            --google-border: #444746;
+            --google-text: #e3e3e3;
+            --google-text-secondary: #c4c7c5;
+            --google-red: #f28b82;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Space Grotesk', -apple-system, sans-serif;
+            background: var(--google-bg);
+            color: var(--google-text);
+            font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
-            background-image: 
-                radial-gradient(circle at 50% 20%, rgba(255, 184, 48, 0.08) 0%, transparent 50%),
-                linear-gradient(to right, #11141f 1px, transparent 1px),
-                linear-gradient(to bottom, #11141f 1px, transparent 1px);
-            background-size: 100% 100%, 40px 40px, 40px 40px;
         }}
-        .login-card {{
+        .google-card {{
             width: 100%;
-            max-width: 420px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 36px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
-            position: relative;
-            overflow: hidden;
+            max-width: 440px;
+            background: var(--google-surface);
+            border: 1px solid var(--google-border);
+            border-radius: 28px;
+            padding: 40px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
         }}
-        .login-card::before {{
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; height: 3px;
-            background: linear-gradient(90deg, var(--accent), var(--mint));
-        }}
-        .brand {{
+        .google-logo-row {{
             display: flex;
             align-items: center;
             gap: 12px;
+            margin-bottom: 16px;
+        }}
+        .google-logo {{
+            width: 32px;
+            height: 32px;
+        }}
+        .google-title {{
+            font-size: 24px;
+            font-weight: 400;
+            color: var(--google-text);
+            margin-bottom: 8px;
+        }}
+        .google-subtitle {{
+            font-size: 14px;
+            color: var(--google-text-secondary);
             margin-bottom: 28px;
         }}
-        .brand-icon {{
-            width: 42px;
-            height: 42px;
-            background: rgba(255, 184, 48, 0.12);
-            border: 1px solid rgba(255, 184, 48, 0.3);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-        }}
-        .brand h1 {{
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-        }}
-        .brand p {{
-            font-size: 12px;
-            color: var(--text-dim);
-            font-family: 'JetBrains Mono', monospace;
-        }}
-        .alert-error {{
-            background: rgba(255, 71, 87, 0.12);
-            border: 1px solid rgba(255, 71, 87, 0.3);
-            color: #ff6b81;
+        .google-alert-error {{
+            background: rgba(242, 139, 130, 0.12);
+            border: 1px solid rgba(242, 139, 130, 0.3);
+            color: var(--google-red);
             padding: 12px 16px;
             border-radius: 8px;
             font-size: 13px;
@@ -796,83 +813,81 @@ def render_login_page(error: Optional[str] = None) -> str:
         .form-group {{
             margin-bottom: 20px;
         }}
-        label {{
+        .input-label {{
             display: block;
             font-size: 12px;
-            font-weight: 600;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            margin-bottom: 8px;
-            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+            color: var(--google-text-secondary);
+            margin-bottom: 6px;
         }}
-        input {{
+        .google-input {{
             width: 100%;
-            background: #0b0e17;
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            background: var(--google-bg);
+            border: 1px solid var(--google-border);
+            border-radius: 8px;
             padding: 14px 16px;
-            color: #fff;
-            font-family: 'JetBrains Mono', monospace;
+            color: var(--google-text);
             font-size: 14px;
+            font-family: 'Roboto', sans-serif;
             transition: all 0.2s ease;
         }}
-        input:focus {{
+        .google-input:focus {{
             outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-glow);
+            border-color: var(--google-blue);
+            box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
         }}
-        .btn-submit {{
+        .google-btn {{
             width: 100%;
-            background: var(--accent);
-            color: #0b0e17;
+            background: var(--google-blue);
+            color: #040c17;
             border: none;
-            border-radius: 10px;
-            padding: 14px;
+            border-radius: 20px;
+            padding: 12px 24px;
             font-size: 14px;
-            font-weight: 700;
-            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
             cursor: pointer;
             transition: all 0.2s ease;
-            margin-top: 8px;
+            margin-top: 12px;
         }}
-        .btn-submit:hover {{
-            background: #ffa800;
-            transform: translateY(-1px);
-            box-shadow: 0 8px 20px var(--accent-glow);
+        .google-btn:hover {{
+            background: var(--google-blue-hover);
         }}
-        .footer-note {{
+        .google-footer-text {{
             margin-top: 24px;
             text-align: center;
             font-size: 12px;
-            color: var(--text-dim);
-            font-family: 'JetBrains Mono', monospace;
+            color: var(--google-text-secondary);
         }}
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <div class="brand">
-            <div class="brand-icon">⚡</div>
-            <div>
-                <h1>NoemtAddons Control</h1>
-                <p>v1.0.0 • Hypixel Skyblock Suite</p>
-            </div>
+    <div class="google-card">
+        <div class="google-logo-row">
+            <svg class="google-logo" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span style="font-weight: 500; font-size: 18px; letter-spacing: -0.2px;">Noemt Cloud</span>
         </div>
+        <h1 class="google-title">Sign in</h1>
+        <p class="google-subtitle">Use your Noemt Operator Account</p>
         {error_html}
         <form method="POST" action="/login">
             <div class="form-group">
-                <label>Operator ID</label>
-                <input type="text" name="username" placeholder="nom" value="nom" required autofocus>
+                <label class="input-label">Operator ID</label>
+                <input type="text" name="username" class="google-input" value="nom" required autofocus>
             </div>
             <div class="form-group">
-                <label>Access Key / Password</label>
-                <input type="password" name="password" placeholder="Enter generated server key" required>
+                <label class="input-label">Security Key</label>
+                <input type="password" name="password" class="google-input" placeholder="Enter key from server logs" required>
             </div>
-            <button type="submit" class="btn-submit">Authenticate Terminal →</button>
+            <button type="submit" class="google-btn">Continue to Console →</button>
         </form>
-        <div class="footer-note">
-            Check terminal server logs for generated key.
+        <div class="google-footer-text">
+            Protected by Noemt Cloud Identity Services
         </div>
     </div>
 </body>
@@ -889,363 +904,512 @@ def render_dashboard_page() -> str:
         for name, info in clients.items():
             player_rows += f"""
             <tr>
-                <td><b><span class="pulse-dot"></span> {name}</b></td>
-                <td><code>{info['uuid'][:12]}...</code></td>
-                <td>{info['ip']}</td>
-                <td><span class="tag tag-legit">v{info['version']}</span></td>
-                <td>{info['connected_at']}</td>
+                <td style="display:flex; align-items:center; gap:10px;">
+                    <div class="avatar-chip">{name[:1].upper()}</div>
+                    <div>
+                        <b>{name}</b>
+                        <div style="font-size:11px; color:var(--google-text-secondary);">{info['uuid'][:12]}...</div>
+                    </div>
+                </td>
+                <td><span class="status-pill status-healthy">● RUNNING</span></td>
+                <td><code>{info['ip']}</code></td>
+                <td><span class="badge-chip">v{info['version']}</span></td>
+                <td style="color:var(--google-text-secondary); font-size:12px;">{info['connected_at']}</td>
+                <td style="text-align:right;">
+                    <form method="POST" action="/api/action" style="display:inline;" onsubmit="return confirm('Emergency close Minecraft for {name}?');">
+                        <input type="hidden" name="action" value="kill">
+                        <input type="hidden" name="target" value="{name}">
+                        <button type="submit" class="google-btn-danger-sm">⛔ Close Game</button>
+                    </form>
+                </td>
             </tr>
             """
     else:
-        player_rows = '<tr><td colspan="5" style="text-align:center; padding: 28px; color: var(--text-dim);"><i>No active Minecraft clients currently connected to telemetry plane.</i></td></tr>'
+        player_rows = '<tr><td colspan="6" style="text-align:center; padding: 36px; color: var(--google-text-secondary);"><i>No client instances currently connected to Noemt Cloud.</i></td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>NoemtAddons • Operator Dashboard</title>
+    <title>Google Cloud Console • NoemtAddons Control Plane</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg: #0b0d13;
-            --surface: #131722;
-            --surface-hover: #191f2e;
-            --border: #1e2638;
-            --border-light: rgba(255, 255, 255, 0.08);
-            --accent: #ffb830;
-            --accent-glow: rgba(255, 184, 48, 0.2);
-            --mint: #00f5a0;
-            --mint-glow: rgba(0, 245, 160, 0.2);
-            --cyan: #00d2ff;
-            --danger: #ff4757;
-            --text: #edf2f7;
-            --text-dim: #78859b;
+            --google-blue: #8ab4f8;
+            --google-blue-container: #1b3a57;
+            --google-green: #81c995;
+            --google-yellow: #fdd663;
+            --google-red: #f28b82;
+            --google-bg: #131314;
+            --google-surface: #1e1f20;
+            --google-surface-variant: #28292a;
+            --google-border: #444746;
+            --google-text: #e3e3e3;
+            --google-text-secondary: #c4c7c5;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Space Grotesk', -apple-system, sans-serif;
+            background: var(--google-bg);
+            color: var(--google-text);
+            font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
             min-height: 100vh;
-            padding: 32px 40px;
         }}
-        header {{
+        /* Google Cloud Top Bar */
+        .google-app-bar {{
+            height: 48px;
+            background: var(--google-surface);
+            border-bottom: 1px solid var(--google-border);
             display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 32px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border);
+            padding: 0 16px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }}
-        .header-brand {{
+        .bar-left {{
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 16px;
         }}
-        .header-logo {{
-            width: 44px;
-            height: 44px;
-            background: rgba(255, 184, 48, 0.12);
-            border: 1px solid rgba(255, 184, 48, 0.3);
-            border-radius: 12px;
+        .bar-brand {{
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 22px;
+            gap: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--google-text);
+            text-decoration: none;
         }}
-        .header-title h1 {{
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-        }}
-        .header-title p {{
+        .project-selector {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--google-surface-variant);
+            border: 1px solid var(--google-border);
+            border-radius: 8px;
+            padding: 4px 12px;
             font-size: 12px;
-            color: var(--text-dim);
-            font-family: 'JetBrains Mono', monospace;
+            color: var(--google-text);
+            cursor: pointer;
         }}
-        .header-controls {{
+        .bar-search {{
+            flex: 1;
+            max-width: 500px;
+            margin: 0 24px;
+        }}
+        .search-box {{
+            width: 100%;
+            background: var(--google-bg);
+            border: 1px solid var(--google-border);
+            border-radius: 8px;
+            padding: 6px 14px;
+            color: var(--google-text);
+            font-size: 13px;
+        }}
+        .bar-right {{
             display: flex;
             align-items: center;
             gap: 12px;
         }}
-        .btn {{
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: var(--surface);
-            color: var(--text);
-            border: 1px solid var(--border);
-            padding: 10px 18px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            font-family: 'Space Grotesk', sans-serif;
-            text-decoration: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }}
-        .btn:hover {{
-            background: var(--surface-hover);
-            border-color: var(--border-light);
-            transform: translateY(-1px);
-        }}
-        .btn-accent {{
-            background: var(--accent);
-            color: #0b0d13;
-            border: none;
-            font-weight: 700;
-        }}
-        .btn-accent:hover {{
-            background: #ffa800;
-            box-shadow: 0 4px 16px var(--accent-glow);
-        }}
-        .btn-danger {{
-            background: rgba(255, 71, 87, 0.15);
-            color: #ff6b81;
-            border-color: rgba(255, 71, 87, 0.3);
-        }}
-        .grid-stats {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px;
-            margin-bottom: 32px;
-        }}
-        .stat-card {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 22px;
-            position: relative;
-            overflow: hidden;
-        }}
-        .stat-label {{
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-            font-family: 'JetBrains Mono', monospace;
-            margin-bottom: 8px;
-        }}
-        .stat-val {{
-            font-size: 26px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
+        .user-avatar {{
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #1a73e8;
+            color: #fff;
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
         }}
-        .grid-main {{
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 24px;
+        /* Main Container */
+        .container {{
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 24px;
         }}
-        @media (max-width: 1024px) {{
-            .grid-main {{ grid-template-columns: 1fr; }}
-            body {{ padding: 20px; }}
-        }}
-        .card {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 26px;
-            margin-bottom: 24px;
-        }}
-        .card-header {{
+        .page-header {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
         }}
-        .card-header h2 {{
-            font-size: 16px;
-            font-weight: 700;
+        .page-title h1 {{
+            font-size: 22px;
+            font-weight: 400;
+        }}
+        .page-title p {{
+            font-size: 13px;
+            color: var(--google-text-secondary);
+            margin-top: 4px;
+        }}
+        .action-row {{
+            display: flex;
+            gap: 10px;
+        }}
+        .google-btn-primary {{
+            background: var(--google-blue);
+            color: #040c17;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }}
+        .google-btn-primary:hover {{ background: #aecbfa; }}
+        .google-btn-secondary {{
+            background: var(--google-surface-variant);
+            color: var(--google-text);
+            border: 1px solid var(--google-border);
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }}
+        .google-btn-secondary:hover {{ background: #323539; }}
+        .google-btn-danger {{
+            background: rgba(242, 139, 130, 0.15);
+            color: var(--google-red);
+            border: 1px solid rgba(242, 139, 130, 0.3);
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+        }}
+        .google-btn-danger:hover {{ background: rgba(242, 139, 130, 0.25); }}
+        .google-btn-danger-sm {{
+            background: rgba(242, 139, 130, 0.12);
+            color: var(--google-red);
+            border: 1px solid rgba(242, 139, 130, 0.25);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }}
+        .google-btn-danger-sm:hover {{ background: rgba(242, 139, 130, 0.25); }}
+        /* Metric Cards */
+        .metric-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }}
+        .metric-card {{
+            background: var(--google-surface);
+            border: 1px solid var(--google-border);
+            border-radius: 12px;
+            padding: 20px;
+        }}
+        .metric-title {{
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--google-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }}
+        .metric-val {{
+            font-size: 24px;
+            font-weight: 400;
             display: flex;
             align-items: center;
             gap: 10px;
+        }}
+        /* Main Layout Grid */
+        .dashboard-grid {{
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }}
+        @media (max-width: 980px) {{
+            .dashboard-grid {{ grid-template-columns: 1fr; }}
+            .bar-search {{ display: none; }}
+        }}
+        .card {{
+            background: var(--google-surface);
+            border: 1px solid var(--google-border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }}
+        .card-title {{
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }}
         table {{
             width: 100%;
             border-collapse: collapse;
         }}
         th, td {{
-            padding: 14px 16px;
+            padding: 12px 14px;
             text-align: left;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 1px solid var(--google-border);
             font-size: 13px;
         }}
         th {{
-            color: var(--text-dim);
-            font-family: 'JetBrains Mono', monospace;
+            color: var(--google-text-secondary);
             font-size: 11px;
             text-transform: uppercase;
-            letter-spacing: 0.8px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
         }}
         code {{
-            background: #0b0e17;
-            border: 1px solid rgba(255,255,255,0.06);
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-family: 'JetBrains Mono', monospace;
+            background: var(--google-surface-variant);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Roboto Mono', monospace;
             font-size: 12px;
-            color: var(--accent);
+            color: var(--google-blue);
         }}
-        .pulse-dot {{
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--mint);
-            box-shadow: 0 0 0 0 var(--mint-glow);
-            animation: pulse 2s infinite;
-        }}
-        @keyframes pulse {{
-            0% {{ box-shadow: 0 0 0 0 var(--mint-glow); }}
-            70% {{ box-shadow: 0 0 0 8px transparent; }}
-            100% {{ box-shadow: 0 0 0 0 transparent; }}
-        }}
-        .tag {{
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 6px;
+        .status-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 8px;
+            border-radius: 12px;
             font-size: 11px;
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
         }}
-        .tag-legit {{ background: rgba(0, 245, 160, 0.12); color: var(--mint); border: 1px solid rgba(0, 245, 160, 0.25); }}
-        .tag-cheat {{ background: rgba(255, 71, 87, 0.12); color: var(--danger); border: 1px solid rgba(255, 71, 87, 0.25); }}
+        .status-healthy {{ background: rgba(129, 201, 149, 0.15); color: var(--google-green); }}
+        .badge-chip {{
+            background: var(--google-surface-variant);
+            border: 1px solid var(--google-border);
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 11px;
+        }}
+        .avatar-chip {{
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #1a73e8;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 12px;
+        }}
         .form-control {{
             width: 100%;
-            background: #0b0e17;
-            border: 1px solid var(--border);
+            background: var(--google-bg);
+            border: 1px solid var(--google-border);
             border-radius: 8px;
-            padding: 10px 14px;
-            color: #fff;
-            font-family: 'JetBrains Mono', monospace;
+            padding: 8px 12px;
+            color: var(--google-text);
             font-size: 13px;
             margin-bottom: 12px;
+        }}
+        .form-control:focus {{
+            outline: none;
+            border-color: var(--google-blue);
         }}
     </style>
 </head>
 <body>
-    <header>
-        <div class="header-brand">
-            <div class="header-logo">⚡</div>
-            <div class="header-title">
-                <h1>NoemtAddons Control Plane</h1>
-                <p>Operator: <b>nom</b> • Environment: <b>Production</b></p>
+    <!-- Google Cloud App Bar -->
+    <div class="google-app-bar">
+        <div class="bar-left">
+            <a href="/" class="bar-brand">
+                <svg width="20" height="20" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Noemt Cloud Console</span>
+            </a>
+            <div class="project-selector">
+                <span>🏢 noemtaddons-prod</span>
+                <small style="color:var(--google-text-secondary);">▾</small>
             </div>
         </div>
-        <div class="header-controls">
-            <form method="POST" action="/api/action" style="display:inline;">
-                <input type="hidden" name="action" value="build">
-                <button type="submit" class="btn btn-accent">🔨 Trigger Build & Deploy</button>
-            </form>
-            <a href="/changelog" class="btn" target="_blank">📜 Changelog</a>
-            <a href="/logout" class="btn btn-danger">🔒 Logout</a>
+        <div class="bar-search">
+            <input type="text" class="search-box" placeholder="Search resources, instances, endpoints (Ctrl+/)">
         </div>
-    </header>
-
-    <div class="grid-stats">
-        <div class="stat-card">
-            <div class="stat-label">Active Connections</div>
-            <div class="stat-val"><span class="pulse-dot"></span> {connected_count} <span style="font-size:14px; color:var(--text-dim); font-weight:normal;">players online</span></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Git Deployment</div>
-            <div class="stat-val"><code>{short_hash}</code> <span class="tag tag-legit">branch: {GIT_BRANCH}</span></div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Build Engine Status</div>
-            <div class="stat-val" style="color: {'var(--mint)' if LAST_BUILD_STATUS == 'Success' or LAST_BUILD_STATUS == 'Ready' else 'var(--danger)'};">{LAST_BUILD_STATUS}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Last Auto-Build</div>
-            <div class="stat-val" style="font-size: 16px; font-family:'JetBrains Mono',monospace;">{LAST_BUILD_TIME}</div>
+        <div class="bar-right">
+            <a href="/logout" class="google-btn-secondary" style="padding:4px 10px; font-size:12px;">Sign Out</a>
+            <div class="user-avatar">N</div>
         </div>
     </div>
 
-    <div class="grid-main">
-        <div>
-            <div class="card">
-                <div class="card-header">
-                    <h2>👥 Active Telemetry Stream</h2>
-                </div>
-                <table>
-                    <thead>
-                        <tr><th>Player</th><th>Session UUID</th><th>IP Address</th><th>Client Build</th><th>Connected At</th></tr>
-                    </thead>
-                    <tbody>
-                        {player_rows}
-                    </tbody>
-                </table>
+    <!-- Main Content -->
+    <div class="container">
+        <div class="page-header">
+            <div class="page-title">
+                <h1>Mod Telemetry & Instance Management</h1>
+                <p>Project: <b>noemtaddons-prod</b> • Region: <b>global</b> • Operator: <b>nom</b></p>
             </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <h2>📦 Distributable Mod Loaders & Builds</h2>
-                </div>
-                <table>
-                    <thead>
-                        <tr><th>Flavor</th><th>Endpoint</th><th>Payload Size</th><th>SHA-256 Checksum</th><th>Action</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><span class="tag tag-legit">LEGIT</span></td>
-                            <td><code>/loaders/noemtaddons-legit.jar</code></td>
-                            <td>{meta['endpoints']['legit']['size'] / 1024:.1f} KB</td>
-                            <td><small>{meta['endpoints']['legit']['sha256'][:16]}...</small></td>
-                            <td><a href="/loaders/noemtaddons-legit.jar" class="btn" style="padding:4px 10px; font-size:12px;">Download</a></td>
-                        </tr>
-                        <tr>
-                            <td><span class="tag tag-cheat">CHEAT</span></td>
-                            <td><code>/loaders/noemtaddons-cheat.jar</code></td>
-                            <td>{meta['endpoints']['cheat']['size'] / 1024:.1f} KB</td>
-                            <td><small>{meta['endpoints']['cheat']['sha256'][:16]}...</small></td>
-                            <td><a href="/loaders/noemtaddons-cheat.jar" class="btn" style="padding:4px 10px; font-size:12px;">Download</a></td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="action-row">
+                <form method="POST" action="/api/action" style="display:inline;">
+                    <input type="hidden" name="action" value="build">
+                    <button type="submit" class="google-btn-primary">🔨 Trigger Cloud Build</button>
+                </form>
+                <a href="/changelog" class="google-btn-secondary" target="_blank">📜 View Changelog</a>
             </div>
         </div>
 
-        <div>
-            <div class="card">
-                <div class="card-header">
-                    <h2>🎮 In-Game Remote Control</h2>
+        <!-- Metric Cards -->
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div class="metric-title">Active Client Instances</div>
+                <div class="metric-val">
+                    <span>{connected_count}</span>
+                    <span class="status-pill status-healthy">● {connected_count} online</span>
                 </div>
-                <form method="POST" action="/api/action">
-                    <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:6px; font-family:'JetBrains Mono',monospace;">ACTION TYPE</label>
-                    <select name="action" class="form-control">
-                        <option value="msg">💬 Chat Message</option>
-                        <option value="title">🔔 Screen Title Alert</option>
-                        <option value="chat">⚡ Execute Client Command</option>
-                    </select>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Current Git Release</div>
+                <div class="metric-val">
+                    <code>{short_hash}</code>
+                    <span class="badge-chip">{GIT_BRANCH}</span>
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Build Pipeline Status</div>
+                <div class="metric-val" style="color: {'var(--google-green)' if LAST_BUILD_STATUS == 'Healthy' else 'var(--google-red)'};">
+                    {LAST_BUILD_STATUS}
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-title">Last Automated Deployment</div>
+                <div class="metric-val" style="font-size: 15px; font-family:'Roboto Mono',monospace;">
+                    {LAST_BUILD_TIME}
+                </div>
+            </div>
+        </div>
 
-                    <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:6px; font-family:'JetBrains Mono',monospace;">TARGET PLAYER</label>
-                    <input type="text" name="target" class="form-control" value="all" placeholder="Player name or 'all'">
+        <!-- Dashboard Grid -->
+        <div class="dashboard-grid">
+            <div>
+                <!-- Connected Instances Table -->
+                <div class="card">
+                    <div class="card-title">
+                        <span>👥 Connected Client Instances ({len(clients)})</span>
+                        <small style="color:var(--google-text-secondary);">Real-Time WebSocket Link</small>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Client Instance</th>
+                                <th>Status</th>
+                                <th>IP Address</th>
+                                <th>Version</th>
+                                <th>Connected At</th>
+                                <th style="text-align:right;">Failsafe Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {player_rows}
+                        </tbody>
+                    </table>
+                </div>
 
-                    <label style="font-size:11px; color:var(--text-dim); display:block; margin-bottom:6px; font-family:'JetBrains Mono',monospace;">MESSAGE / COMMAND TEXT</label>
-                    <input type="text" name="text" class="form-control" placeholder="Text or command (e.g. &warp hub)" required>
-
-                    <button type="submit" class="btn btn-accent" style="width:100%; justify-content:center; padding:12px;">Send Signal →</button>
-                </form>
+                <!-- Mod Loader Distribution Card -->
+                <div class="card">
+                    <div class="card-title">
+                        <span>📦 Distributed Builds & Endpoints</span>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Build Flavor</th>
+                                <th>Endpoint URL</th>
+                                <th>Payload Size</th>
+                                <th>SHA-256 Checksum</th>
+                                <th>Download</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="status-pill status-healthy">LEGIT</span></td>
+                                <td><code>/loaders/noemtaddons-legit.jar</code></td>
+                                <td>{meta['endpoints']['legit']['size'] / 1024:.1f} KB</td>
+                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['legit']['sha256'][:16]}...</small></td>
+                                <td><a href="/download/loaders/legit" class="google-btn-secondary" style="padding:4px 8px; font-size:11px;">Loader JAR</a></td>
+                            </tr>
+                            <tr>
+                                <td><span class="status-pill" style="background:rgba(242,139,130,0.15); color:var(--google-red);">CHEAT</span></td>
+                                <td><code>/loaders/noemtaddons-cheat.jar</code></td>
+                                <td>{meta['endpoints']['cheat']['size'] / 1024:.1f} KB</td>
+                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['cheat']['sha256'][:16]}...</small></td>
+                                <td><a href="/download/loaders/cheat" class="google-btn-secondary" style="padding:4px 8px; font-size:11px;">Loader JAR</a></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <h2>📋 Git CI/CD Information</h2>
+            <!-- Right Column: Emergency Failsafe & Control -->
+            <div>
+                <!-- Emergency Client Shutdown Card -->
+                <div class="card" style="border-color: rgba(242, 139, 130, 0.4);">
+                    <div class="card-title" style="color: var(--google-red);">
+                        <span>🛑 Remote Client Failsafe</span>
+                    </div>
+                    <p style="font-size:12px; color:var(--google-text-secondary); margin-bottom:14px;">
+                        Remotely closes Minecraft instances cleanly as a security failsafe.
+                    </p>
+                    <form method="POST" action="/api/action" onsubmit="return confirm('Trigger emergency shutdown for selected target?');">
+                        <input type="hidden" name="action" value="kill">
+                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">TARGET CLIENT</label>
+                        <input type="text" name="target" class="form-control" value="all" placeholder="Player name or 'all'" required>
+                        <button type="submit" class="google-btn-danger" style="width:100%;">⚡ Close Target Client(s)</button>
+                    </form>
                 </div>
-                <div style="font-family:'JetBrains Mono',monospace; font-size:12px; line-height:1.6; color:var(--text-dim);">
-                    <p style="margin-bottom:8px;"><b>Latest Commit:</b> <span style="color:#fff;">{short_hash}</span></p>
-                    <p style="margin-bottom:8px;"><b>Author:</b> <span style="color:#fff;">{author}</span></p>
-                    <p style="margin-bottom:8px;"><b>Message:</b> <span style="color:#fff;">{msg}</span></p>
-                    <p><b>Auto-Polling:</b> <span style="color:var(--mint);">{POLL_INTERVAL}s interval</span></p>
+
+                <!-- Remote Command Dispatch -->
+                <div class="card">
+                    <div class="card-title">
+                        <span>🎮 Remote Instance Dispatch</span>
+                    </div>
+                    <form method="POST" action="/api/action">
+                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">ACTION</label>
+                        <select name="action" class="form-control">
+                            <option value="msg">💬 Chat Message</option>
+                            <option value="title">🔔 Screen Title</option>
+                            <option value="chat">⚡ Execute In-Game Command</option>
+                        </select>
+
+                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">TARGET</label>
+                        <input type="text" name="target" class="form-control" value="all" placeholder="Player name or 'all'">
+
+                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">PAYLOAD TEXT</label>
+                        <input type="text" name="text" class="form-control" placeholder="Text or command" required>
+
+                        <button type="submit" class="google-btn-primary" style="width:100%;">Dispatch to Client →</button>
+                    </form>
+                </div>
+
+                <!-- Git Metadata -->
+                <div class="card">
+                    <div class="card-title">
+                        <span>🌿 Git Deployment Info</span>
+                    </div>
+                    <div style="font-size:12px; line-height:1.6; color:var(--google-text-secondary);">
+                        <p><b>Commit:</b> <code>{short_hash}</code> ({author})</p>
+                        <p style="margin-top:4px;"><b>Message:</b> <span style="color:var(--google-text);">{msg}</span></p>
+                        <p style="margin-top:4px;"><b>Branch:</b> <code>origin/{GIT_BRANCH}</code></p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1306,7 +1470,7 @@ async def handle_ws_session(reader: asyncio.StreamReader, writer: asyncio.Stream
 
                     await send_ws_json(writer, {
                         "type": "HANDSHAKE_ACK",
-                        "message": f"Connected to NoemtAddons Server as '{player_name}'",
+                        "message": f"Connected to Noemt Cloud Server as '{player_name}'",
                         "serverTime": int(datetime.now().timestamp() * 1000)
                     })
 
@@ -1315,8 +1479,7 @@ async def handle_ws_session(reader: asyncio.StreamReader, writer: asyncio.Stream
                     y = data.get("y", 0)
                     z = data.get("z", 0)
                     hp = data.get("health", 0)
-                    nav = data.get("isNavigating", False)
-                    logger.info(f"📊 Status [{player_name}]: Pos=({x:.1f}, {y:.1f}, {z:.1f}) | HP={hp} | Navigating={nav}")
+                    logger.info(f"📊 Status [{player_name}]: Pos=({x:.1f}, {y:.1f}, {z:.1f}) | HP={hp}")
 
                 elif msg_type == "EVENT":
                     event_name = data.get("event", "UNKNOWN")
@@ -1368,14 +1531,14 @@ async def interactive_console():
 
     await asyncio.sleep(1)
     print("\n" + "=" * 65)
-    print(" 🚀 NoemtAddons Control Plane & CI/CD Server Ready")
+    print(" ☁️ Noemt Cloud Console & CI/CD Server Ready")
     print(" Type 'help' for command list.")
     print("=" * 65 + "\n")
 
     loop = asyncio.get_event_loop()
     while True:
         try:
-            line = await loop.run_in_executor(None, input, "noemt-server> ")
+            line = await loop.run_in_executor(None, input, "noemt-cloud> ")
             line = line.strip()
             if not line:
                 continue
@@ -1389,7 +1552,7 @@ async def interactive_console():
 Available Commands:
   build / update                      - Trigger git pull & rebuild
   creds                               - Print current dashboard login credentials
-  webhook <url>                       - Set or test Discord webhook URL
+  kill / close <player|all>           - Remotely close player's Minecraft instance
   list                                - List connected players
   msg <player|all> <text>             - Send chat message to player(s)
   chat <player|all> <command>         - Execute command as player
@@ -1397,9 +1560,7 @@ Available Commands:
   goto <player|all> <x> <y> <z>       - Direct player pathfinder to coords
   stop <player|all>                   - Stop player pathfinder
   status <player|all>                 - Query player position & health
-  discord <title> <desc>              - Send Discord notification test
-  version                             - View build metadata and JAR status
-  raw <player|all> <json>             - Send raw custom JSON packet
+  webhook <url>                       - Set or test Discord webhook URL
   quit / exit                         - Shutdown server
 """)
 
@@ -1407,23 +1568,13 @@ Available Commands:
                 print("Triggering manual build...")
                 asyncio.create_task(AutoBuilder.run_build(trigger_source="Manual CLI Command"))
 
-            elif cmd in ("creds", "pass", "login"):
-                print(f"\n🔐 Dashboard Credentials:\n  Username: {ADMIN_USER}\n  Password: {ADMIN_PASSWORD}\n")
+            elif cmd in ("kill", "close", "shutdown"):
+                target = args.strip() if args else "all"
+                n = await send_to_target(target, {"type": "SHUTDOWN", "reason": "CLI remote shutdown"})
+                print(f"Sent emergency shutdown signal to {n} client(s).")
 
-            elif cmd == "webhook":
-                global DISCORD_WEBHOOK
-                if args:
-                    DISCORD_WEBHOOK = args.strip()
-                    print(f"Updated Discord webhook URL: {DISCORD_WEBHOOK}")
-                    send_discord_webhook(
-                        DISCORD_WEBHOOK,
-                        title="🔔 Webhook Connected",
-                        description="Discord webhook integration is successfully linked to NoemtAddons server!",
-                        color=0x00F5A0,
-                        fields=[]
-                    )
-                else:
-                    print(f"Current webhook: {DISCORD_WEBHOOK or 'None'}")
+            elif cmd in ("creds", "pass", "login"):
+                print(f"\n🔐 Cloud Console Credentials:\n  Username: {ADMIN_USER}\n  Password: {ADMIN_PASSWORD}\n")
 
             elif cmd == "list":
                 if not clients:
@@ -1433,10 +1584,6 @@ Available Commands:
                     for name, info in clients.items():
                         print(f"  • {name} | UUID: {info['uuid']} | IP: {info['ip']} | Mod: v{info['version']} | Joined: {info['connected_at']}")
                     print()
-
-            elif cmd == "version":
-                meta = compute_version_metadata()
-                print(json.dumps(meta, indent=2))
 
             elif cmd == "msg":
                 sub = args.split(" ", 1)
@@ -1486,21 +1633,13 @@ Available Commands:
                 n = await send_to_target(target, {"type": "STATUS_REQUEST"})
                 print(f"Requested status from {n} client(s).")
 
-            elif cmd == "discord":
-                sub = args.split(" ", 1)
-                title = sub[0] if len(sub) > 0 else "Remote Alert"
-                desc = sub[1] if len(sub) > 1 else ""
-                if DISCORD_WEBHOOK:
-                    send_discord_webhook(
-                        DISCORD_WEBHOOK,
-                        title=f"📢 {title}",
-                        description=desc or "Notification from NoemtAddons Console",
-                        color=0x00D2FF,
-                        fields=[{"name": "Triggered By", "value": "Console", "inline": True}]
-                    )
-                    print("Sent Discord webhook message.")
+            elif cmd == "webhook":
+                global DISCORD_WEBHOOK
+                if args:
+                    DISCORD_WEBHOOK = args.strip()
+                    print(f"Updated Discord webhook URL: {DISCORD_WEBHOOK}")
                 else:
-                    print("No Discord webhook URL configured. Use 'webhook <url>' to set one.")
+                    print(f"Current webhook: {DISCORD_WEBHOOK or 'None'}")
 
             elif cmd in ("quit", "exit"):
                 print("Shutting down server...")
@@ -1521,7 +1660,7 @@ Available Commands:
 # ==============================================================================
 
 async def main():
-    parser = argparse.ArgumentParser(description="NoemtAddons Control Plane & CI/CD Mod Server")
+    parser = argparse.ArgumentParser(description="Noemt Cloud Console & CI/CD Mod Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
     parser.add_argument("--repo-dir", default=None, help="Root repository directory (default: parent of server/)")
@@ -1549,17 +1688,15 @@ async def main():
     init_auth(args.admin_pass)
 
     print("\n" + "=" * 65)
-    print(" 🔒 DASHBOARD SECURITY CREDENTIALS")
+    print(" 🔒 NOEMT CLOUD CONSOLE CREDENTIALS")
     print(f"    URL:      http://{args.host}:{args.port}/")
     print(f"    Username: {ADMIN_USER}")
     print(f"    Password: {ADMIN_PASSWORD}")
     print("=" * 65 + "\n")
 
-    logger.info(f"Starting NoemtAddons Server on http://{args.host}:{args.port}")
+    logger.info(f"Starting Noemt Cloud Server on http://{args.host}:{args.port}")
     logger.info(f"Repository: {REPO_DIR.resolve()} (Branch: '{GIT_BRANCH}')")
     logger.info(f"Mod JARs: {JARS_DIR.resolve()}")
-    if DISCORD_WEBHOOK:
-        logger.info("Discord Webhook integration is ENABLED.")
 
     server = await asyncio.start_server(handle_connection, args.host, args.port)
 
