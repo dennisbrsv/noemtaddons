@@ -7,14 +7,18 @@ import com.google.gson.reflect.TypeToken
 import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.remote.RemoteWebSocketClient
 import dev.noemt.client.utils.ChatUtils
+import dev.noemt.client.utils.ItemUtils.skyblockId
 import dev.noemt.client.utils.PlayerUtils
+import dev.noemt.client.utils.ScoreboardUtils
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundEvents
+import net.minecraft.world.entity.Entity
+import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.inventory.ContainerInput
-import net.minecraft.world.inventory.Slot
 import net.minecraft.world.item.ItemStack
+import net.minecraft.world.phys.Vec3
 import java.io.File
 import kotlin.random.Random
 
@@ -49,15 +53,28 @@ object LoadoutManager {
     // Live UI reactivity listener
     var onDataChanged: (() -> Unit)? = null
 
-    // Miniboss Fight Tracking
+    // Miniboss Memory Tracking
     var inMinibossFight: Boolean = false
         private set
-    var minibossRevertLoadoutId: String? = null
+    var trackedMinibossEntityId: Int = -1
         private set
-    var activeMinibossName: String? = null
+    var trackedMinibossName: String = ""
         private set
+    var minibossPreLoadoutId: String? = null
+        private set
+    var minibossLastSeenPos: Vec3? = null
+        private set
+    private var minibossDisappearedTicks: Int = 0
+    private var minibossEngageTimeMs: Long = 0L
 
-    // State tracking for in-menu detection
+    // Instance / Area tracking
+    var lastDetectedInstance: GameInstanceType? = null
+        private set
+    var lastDetectedArea: String = ""
+        private set
+    private var instanceCheckCounter = 0
+
+    // In-menu state
     var inLoadoutMenu: Boolean = false
         private set
     private var pendingAutoClose: Boolean = false
@@ -106,39 +123,144 @@ object LoadoutManager {
         swapTo(target, "Revert (Last Equipped: $targetName)")
     }
 
-    fun onMinibossEngaged(targetLoadoutId: String, minibossName: String) {
-        if (inMinibossFight) return
+    // ==========================================
+    // MINIBOSS MEMORY TRACKING ENGINE
+    // ==========================================
+
+    fun onMinibossEngaged(entity: Entity, targetLoadoutId: String) {
+        val entityId = entity.id
+        if (inMinibossFight && trackedMinibossEntityId == entityId) return
+
+        val entityName = MobMatcher.getAllEntityNames(entity).firstOrNull() ?: "Miniboss"
+        trackedMinibossEntityId = entityId
+        trackedMinibossName = entityName
+        minibossPreLoadoutId = currentLoadoutId
+        minibossLastSeenPos = entity.position()
+        minibossDisappearedTicks = 0
+        minibossEngageTimeMs = System.currentTimeMillis()
         inMinibossFight = true
-        minibossRevertLoadoutId = currentLoadoutId
-        activeMinibossName = minibossName
-        swapTo(targetLoadoutId, "Miniboss Encounter: $minibossName")
+
+        ChatUtils.modMessage("&b[Loadout] &6⚔️ Engaged Miniboss: &e$entityName &7➜ Swapping to combat set...")
+        swapTo(targetLoadoutId, "Miniboss Encounter: $entityName")
     }
 
-    fun onMinibossKilled(reason: String = "Defeated") {
+    fun onEntityRemoved(entityId: Int) {
+        if (inMinibossFight && entityId == trackedMinibossEntityId) {
+            onMinibossDisappeared("Entity Removed Packet")
+        }
+    }
+
+    private fun checkMinibossTrackingTick() {
+        if (!inMinibossFight) return
+
+        val player = mc.player
+        val level = mc.level
+        if (player == null || level == null || !player.isAlive) {
+            resetMinibossState()
+            return
+        }
+
+        val trackedEntity = level.getEntity(trackedMinibossEntityId)
+        val isAliveAndPresent = trackedEntity != null &&
+                trackedEntity.isAlive &&
+                !trackedEntity.isRemoved &&
+                ((trackedEntity as? LivingEntity)?.health ?: 1f) > 0f
+
+        if (isAliveAndPresent && trackedEntity != null) {
+            minibossLastSeenPos = trackedEntity.position()
+            minibossDisappearedTicks = 0
+
+            // If player ran away far (> 50 blocks)
+            val dist = player.position().distanceTo(trackedEntity.position())
+            if (dist > 50.0 && System.currentTimeMillis() - minibossEngageTimeMs > 6000L) {
+                onMinibossDisappeared("Player Moved Away")
+            }
+        } else {
+            minibossDisappearedTicks++
+            // After 2 ticks of disappearance, trigger revert
+            if (minibossDisappearedTicks >= 2) {
+                onMinibossDisappeared("Entity Disappeared / Slain")
+            }
+        }
+    }
+
+    fun onMinibossDisappeared(reason: String = "Defeated") {
         if (!inMinibossFight) return
         inMinibossFight = false
-        val revertId = minibossRevertLoadoutId ?: previousLoadoutId
-        val mbName = activeMinibossName ?: "Miniboss"
-        minibossRevertLoadoutId = null
-        activeMinibossName = null
+
+        val revertId = minibossPreLoadoutId
+        val mbName = trackedMinibossName.takeIf { it.isNotBlank() } ?: "Miniboss"
+
+        trackedMinibossEntityId = -1
+        trackedMinibossName = ""
+        minibossPreLoadoutId = null
+        minibossDisappearedTicks = 0
 
         if (revertId != null && revertId != currentLoadoutId) {
-            ChatUtils.modMessage("&b[Loadout] &a$mbName slain! Auto-swapping back to previous loadout...")
+            val revertName = loadouts[revertId]?.name ?: revertId
+            ChatUtils.modMessage("&b[Loadout] &a✓ $mbName killed/disappeared! Auto-swapping back to: &e$revertName")
             swapTo(revertId, "Miniboss Slain ($reason)")
         }
     }
 
+    // Respawn Queue Tracking
+    var pendingRespawnSwapLoadoutId: String? = null
+        private set
+    var pendingRespawnReason: String = ""
+        private set
+    private var wasDeadOrGhost: Boolean = false
+
+    fun isPlayerDeadOrGhost(): Boolean {
+        val player = mc.player ?: return true
+        if (!player.isAlive) return true
+        if (dev.noemt.client.utils.DungeonListener.thePlayer?.isDead == true) return true
+        if (PlayerUtils.getHotbarSlot(0)?.skyblockId == "HAUNT_ABILITY") return true
+        // If in dungeon and abilities allow flying/spectating, player is a ghost
+        if (dev.noemt.client.utils.LocationUtils.inDungeon && (player.abilities.mayfly || player.abilities.flying)) return true
+        return false
+    }
+
     fun onPlayerDeath() {
+        wasDeadOrGhost = true
         if (inMinibossFight) {
-            inMinibossFight = false
-            minibossRevertLoadoutId = null
-            activeMinibossName = null
+            val revertId = minibossPreLoadoutId ?: previousLoadoutId
+            if (revertId != null) {
+                pendingRespawnSwapLoadoutId = revertId
+                pendingRespawnReason = "Respawned after Miniboss fight death"
+            }
+            resetMinibossState()
+        }
+        if (isExecutingSwap) {
+            pendingRespawnSwapLoadoutId = pendingLoadout?.id ?: currentLoadoutId
+            pendingRespawnReason = pendingReason
+            resetSwap()
         }
     }
+
+    fun resetMinibossState() {
+        inMinibossFight = false
+        trackedMinibossEntityId = -1
+        trackedMinibossName = ""
+        minibossPreLoadoutId = null
+        minibossDisappearedTicks = 0
+    }
+
+    // ==========================================
+    // SWAP EXECUTION & STATE MACHINE
+    // ==========================================
 
     fun swapTo(id: String, reason: String = "Manual", force: Boolean = false) {
         val loadout = loadouts[id] ?: run {
             ChatUtils.modMessage("&c[Loadout] Unknown loadout ID: &e$id")
+            return
+        }
+
+        // If player is dead or in ghost flight, queue for respawn
+        if (isPlayerDeadOrGhost()) {
+            ChatUtils.modMessage("&e[Loadout] Player is dead/ghost. Queuing swap to ${loadout.name} upon respawn...")
+            pendingRespawnSwapLoadoutId = id
+            pendingRespawnReason = reason
+            wasDeadOrGhost = true
             return
         }
 
@@ -178,6 +300,40 @@ object LoadoutManager {
     }
 
     fun onTick() {
+        // 1. Check Death / Ghost / Respawn State
+        val deadOrGhost = isPlayerDeadOrGhost()
+        if (wasDeadOrGhost && !deadOrGhost) {
+            // Player has confirmed respawned (no longer flying / ghost mode ended)
+            wasDeadOrGhost = false
+            val target = pendingRespawnSwapLoadoutId
+            val reason = pendingRespawnReason
+            pendingRespawnSwapLoadoutId = null
+            pendingRespawnReason = ""
+
+            if (target != null && target != currentLoadoutId) {
+                ChatUtils.modMessage("&b[Loadout] &aRespawn confirmed (grounded)! Auto-swapping to: &e${loadouts[target]?.name ?: target}")
+                swapTo(target, reason)
+            }
+        } else if (deadOrGhost) {
+            wasDeadOrGhost = true
+            if (isExecutingSwap) {
+                pendingRespawnSwapLoadoutId = pendingLoadout?.id ?: currentLoadoutId
+                pendingRespawnReason = pendingReason
+                resetSwap()
+            }
+            return
+        }
+
+        // 2. Miniboss Memory Tracking Check
+        checkMinibossTrackingTick()
+
+        // 3. Periodic Scoreboard / Instance Detection Check (every 10 ticks)
+        instanceCheckCounter++
+        if (instanceCheckCounter % 10 == 0) {
+            checkGameInstance()
+        }
+
+        // 3. Process automated GUI swap state machine
         if (currentStage == SwapStage.IDLE) return
         val player = mc.player ?: run {
             resetSwap()
@@ -251,6 +407,18 @@ object LoadoutManager {
             }
 
             SwapStage.IDLE -> {}
+        }
+    }
+
+    private fun checkGameInstance() {
+        if (!ConfigManager.config.loadout.enabled) return
+        val detected = ScoreboardUtils.detectGameInstance() ?: return
+        val (instanceType, areaName) = detected
+
+        if (instanceType != lastDetectedInstance || areaName != lastDetectedArea) {
+            lastDetectedInstance = instanceType
+            lastDetectedArea = areaName
+            checkConditions(ConditionContext(location = "$areaName ${instanceType.name}"))
         }
     }
 
@@ -357,12 +525,15 @@ object LoadoutManager {
             if (rule.condition.matches(context)) {
                 rule.lastTriggeredMs = now
 
-                // Check for Miniboss Auto-Revert Handling
                 val cond = rule.condition
                 if (cond is LoadoutCondition.MinibossCondition ||
                     (cond is LoadoutCondition.AimCondition && cond.mobCategory == MobCategory.MINIBOSS)) {
-                    val entityName = context.aimedEntity?.let { MobMatcher.getAllEntityNames(it).firstOrNull() } ?: "Miniboss"
-                    onMinibossEngaged(target, entityName)
+                    val aimed = context.aimedEntity
+                    if (aimed != null) {
+                        onMinibossEngaged(aimed, target)
+                    } else {
+                        swapTo(target, "Rule: ${rule.name}")
+                    }
                 } else {
                     swapTo(target, "Rule: ${rule.name}")
                 }

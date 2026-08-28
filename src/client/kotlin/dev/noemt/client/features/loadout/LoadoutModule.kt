@@ -45,7 +45,16 @@ object LoadoutModule : Module {
                 if (LoadoutManager.inLoadoutMenu) {
                     LoadoutManager.syncFromContainerItems(packet.items())
                 }
+            } else if (packet is net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket) {
+                for (id in packet.entityIds) {
+                    LoadoutManager.onEntityRemoved(id)
+                }
             }
+        }
+
+        // World Change Reset
+        register<dev.noemt.client.event.impl.WorldChangeEvent> {
+            LoadoutManager.resetMinibossState()
         }
 
         // 2. Chat Message Trigger & Miniboss Kill Detection
@@ -60,15 +69,15 @@ object LoadoutModule : Module {
                     text.contains("was killed", ignoreCase = true) ||
                     text.contains("You killed", ignoreCase = true)
                 ) {
-                    val activeName = LoadoutManager.activeMinibossName
-                    if (activeName == null || text.contains(activeName, ignoreCase = true) ||
+                    val activeName = LoadoutManager.trackedMinibossName
+                    if (activeName.isBlank() || text.contains(activeName, ignoreCase = true) ||
                         text.contains("Shadow Assassin", ignoreCase = true) ||
                         text.contains("Lost Adventurer", ignoreCase = true) ||
                         text.contains("Frozen Adventurer", ignoreCase = true) ||
                         text.contains("Angry Archaeologist", ignoreCase = true) ||
                         text.contains("King Midas", ignoreCase = true)
                     ) {
-                        LoadoutManager.onMinibossKilled(text)
+                        LoadoutManager.onMinibossDisappeared("Chat: $text")
                     }
                 }
             }
@@ -79,7 +88,7 @@ object LoadoutModule : Module {
         // 3. Player Death Reset
         register<dev.noemt.client.event.impl.DungeonEvent.PlayerDeathEvent> {
             if (event.name == mc.user.name) {
-                LoadoutManager.onPlayerDeath()
+                LoadoutManager.resetMinibossState()
             }
         }
 
