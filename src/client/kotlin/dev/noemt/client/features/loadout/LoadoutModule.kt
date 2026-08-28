@@ -29,9 +29,15 @@ object LoadoutModule : Module {
     val keyLoadout2 = KeyMapping("key.noemtaddons.loadout_2", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
     val keyLoadout3 = KeyMapping("key.noemtaddons.loadout_3", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
     val keyLoadout4 = KeyMapping("key.noemtaddons.loadout_4", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
+    val keyCopyItemData = KeyMapping("key.noemtaddons.copy_item_data", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F4, KeyMapping.Category.MISC)
 
     override fun init() {
         LoadoutManager.init()
+
+        // Register keybindings into Fabric
+        for (km in listOf(keyToggleAB, keySwapPrevious, keyLoadout1, keyLoadout2, keyLoadout3, keyLoadout4, keyCopyItemData)) {
+            net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper.registerKeyMapping(km)
+        }
 
         // 1. Screen Packet Detection & Auto-Sync for /loadouts menu
         register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Pre> {
@@ -122,6 +128,9 @@ object LoadoutModule : Module {
             }
             while (keyLoadout4.consumeClick()) {
                 LoadoutManager.swapTo("loadout_4", "Direct Keybind (4)")
+            }
+            while (keyCopyItemData.consumeClick()) {
+                dev.noemt.client.utils.DebugUtils.dumpHoveredOrHeldItem()
             }
 
             if (!ConfigManager.config.loadout.enabled) return@register

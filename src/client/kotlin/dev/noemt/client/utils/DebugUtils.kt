@@ -123,38 +123,61 @@ object DebugUtils {
     }
 
     fun dumpHeldItem(): String {
-        val player = mc.player ?: return "No player loaded."
-        val stack = player.mainHandItem
-        if (stack.isEmpty) {
-            ChatUtils.modMessage("&c[NoemtAddons] No item currently in main hand!")
-            return "No item in main hand."
+        return dumpHoveredOrHeldItem()
+    }
+
+    fun dumpHoveredOrHeldItem(): String {
+        val screen = mc.screen
+        var targetStack: net.minecraft.world.item.ItemStack? = null
+        var sourceDescription = "Held Main Hand"
+
+        if (screen is net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<*>) {
+            val slot = (screen as? dev.noemt.client.mixin.IContainerScreenAccessor)?.hoveredSlot
+            if (slot != null && slot.hasItem()) {
+                targetStack = slot.item
+                sourceDescription = "Hovered Slot #${slot.index} in Container"
+            }
         }
 
+        if (targetStack == null || targetStack.isEmpty) {
+            targetStack = mc.player?.mainHandItem?.takeUnless { it.isEmpty }
+        }
+
+        if (targetStack == null || targetStack.isEmpty) {
+            ChatUtils.modMessage("&c[Debug] No item hovered in container or held in main hand!")
+            return "No item found."
+        }
+
+        val stack = targetStack
         val sb = StringBuilder()
-        sb.appendLine("=== Held Item Full Dump ===")
-        sb.appendLine("Item Name: '${stack.hoverName.string}' (${stack.hoverName.string.removeFormatting()})")
-        sb.appendLine("Type: ${net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)}")
+        sb.appendLine("=== Item Full Data Dump ($sourceDescription) ===")
+        sb.appendLine("Display Name: '${stack.hoverName.string}'")
+        sb.appendLine("Clean Name: '${stack.hoverName.string.removeFormatting()}'")
+        sb.appendLine("Registry ID: ${net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)}")
         sb.appendLine("Count: ${stack.count}")
 
-        val customData = dev.noemt.client.utils.ItemUtils.run { stack.customData }
-        val sbId = dev.noemt.client.utils.ItemUtils.run { stack.skyblockId }
-        val uuid = dev.noemt.client.utils.ItemUtils.run { stack.itemUUID }
+        val customData = ItemUtils.run { stack.customData }
+        val sbId = ItemUtils.run { stack.skyblockId }
+        val uuid = ItemUtils.run { stack.itemUUID }
+        val skull = ItemUtils.getSkullTexture(stack)
+
         sb.appendLine("Skyblock ID: '$sbId'")
         sb.appendLine("Item UUID: '$uuid'")
+        if (skull != null) sb.appendLine("Skull Texture: '$skull'")
 
-        sb.appendLine("--- Full Lore Lines ---")
-        val rawLore = dev.noemt.client.utils.ItemUtils.run { stack.lore }
+        sb.appendLine("--- Lore Lines ---")
+        val rawLore = ItemUtils.run { stack.lore }
         for ((idx, line) in rawLore.withIndex()) {
             sb.appendLine("[$idx] '${line.removeFormatting()}' | raw='$line'")
         }
 
-        sb.appendLine("--- Custom Data (NBT) ---")
+        sb.appendLine("--- Custom Data (NBT / Components) ---")
         sb.appendLine(customData.toString())
-        sb.appendLine("============================")
+        sb.appendLine("================================================")
 
         val text = sb.toString()
         mc.keyboardHandler.clipboard = text
-        ChatUtils.modMessage("&a[NoemtAddons] Dumped '${stack.hoverName.string}' lore and metadata to clipboard! &e(Paste with Ctrl+V)")
+        ChatUtils.modMessage("&a[Debug] Copied full item data for &e${stack.hoverName.string} &7($sourceDescription) &ato clipboard! &e(Ctrl+V)")
         return text
     }
 
@@ -170,12 +193,12 @@ object DebugUtils {
         sb.appendLine()
         sb.appendLine(dumpBloodEntities())
         sb.appendLine()
-        sb.appendLine(dumpHeldItem())
+        sb.appendLine(dumpHoveredOrHeldItem())
         sb.appendLine("=================================================================")
 
         val text = sb.toString()
         mc.keyboardHandler.clipboard = text
-        ChatUtils.modMessage("&a[NoemtAddons] Dumped FULL Debug Info (Location + Scoreboard + Tablist + Entities + Item) to clipboard!")
+        ChatUtils.modMessage("&a[NoemtAddons] Dumped FULL Debug Info to clipboard!")
         return text
     }
 }

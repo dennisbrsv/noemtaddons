@@ -7,6 +7,9 @@ import com.google.gson.reflect.TypeToken
 import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.remote.RemoteWebSocketClient
 import dev.noemt.client.utils.ChatUtils
+import dev.noemt.client.utils.ChatUtils.removeFormatting
+import dev.noemt.client.utils.ItemUtils
+import dev.noemt.client.utils.ItemUtils.lore
 import dev.noemt.client.utils.ItemUtils.skyblockId
 import dev.noemt.client.utils.PlayerUtils
 import dev.noemt.client.utils.ScoreboardUtils
@@ -434,7 +437,7 @@ object LoadoutManager {
         pendingAutoClose = false
     }
 
-    // Auto-sync loadouts from SkyBlock container items
+    // Auto-sync loadouts from SkyBlock container items (Silent background sync)
     fun syncFromContainerItems(items: List<ItemStack>) {
         var syncedCount = 0
         for ((index, containerSlot) in SkyblockLoadoutConstants.LOADOUT_SLOTS.withIndex()) {
@@ -442,22 +445,34 @@ object LoadoutManager {
             val item = items.getOrNull(containerSlot) ?: continue
             if (item.isEmpty) continue
 
-            val rawName = item.hoverName.string.replace(Regex("§[0-9a-fk-or]"), "").trim()
-            if (rawName.isBlank() || rawName.equals("Empty", ignoreCase = true)) continue
+            val rawName = item.hoverName.string.removeFormatting().trim()
+            // Ignore filler glass panes and empty/locked slots
+            if (rawName.isBlank() ||
+                rawName.contains("glass pane", ignoreCase = true) ||
+                rawName.contains("Empty", ignoreCase = true) ||
+                rawName.contains("Locked", ignoreCase = true)
+            ) continue
 
             val id = "loadout_$loadoutNum"
             val existing = loadouts[id]
+
+            // Extract pet if in lore
+            val lore = ItemUtils.run { item.lore }
+            val petLine = lore.find { it.contains("Pet:", ignoreCase = true) }
+            val extractedPet = petLine?.removeFormatting()?.substringAfter("Pet:")?.trim()?.takeIf { it.isNotBlank() }
 
             if (existing != null) {
                 existing.name = rawName
                 existing.loadoutSlot = loadoutNum
                 existing.openCommand = "/loadouts"
+                if (extractedPet != null) existing.petName = extractedPet
             } else {
                 loadouts[id] = Loadout(
                     id = id,
                     name = rawName,
                     loadoutSlot = loadoutNum,
                     openCommand = "/loadouts",
+                    petName = extractedPet,
                     slot = if (index < 9) index else null
                 )
             }
@@ -466,7 +481,6 @@ object LoadoutManager {
 
         if (syncedCount > 0) {
             saveData()
-            ChatUtils.modMessage("&b[Loadout] &aAuto-synced &e$syncedCount &aloadouts from SkyBlock /loadouts menu!")
             notifyDataChanged()
         }
     }

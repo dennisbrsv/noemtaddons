@@ -1,90 +1,191 @@
 package dev.noemt.client.features.loadout
 
 import dev.noemt.client.config.ConfigManager
-import dev.noemt.client.ui.core.GuiTheme
-import dev.noemt.client.ui.core.NoemtScreen
-import dev.noemt.client.ui.dsl.UiBuilder
+import dev.noemt.client.utils.ChatUtils.removeFormatting
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
-import net.minecraft.client.gui.components.EditBox
+import net.minecraft.client.gui.screens.Screen
+import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.client.renderer.RenderPipelines
+import net.minecraft.client.resources.sounds.SimpleSoundInstance
+import net.minecraft.core.component.DataComponents
 import net.minecraft.network.chat.Component
-import java.awt.Color
+import net.minecraft.resources.Identifier
+import net.minecraft.sounds.SoundEvents
+import net.minecraft.world.item.Item
+import net.minecraft.world.item.ItemStack
+import net.minecraft.world.item.Items
+import net.minecraft.world.item.component.ItemLore
 
-class LoadoutScreen : NoemtScreen(
-    title = Component.literal("NoemtAddons Auto Loadout Swapper"),
-    windowTitle = "§b§lNoemtAddons §8• §fAuto Loadout Swapper §c[CHEAT]",
-    windowSubtitle = "§7Toggle: §e[V] §7• Revert: §e[B] §7(Last Set) • Auto-Reverts on Miniboss Kill",
-    widthRatio = 0.94f,
-    heightRatio = 0.92f,
-    minWidth = 640f,
-    maxWidth = 980f
-) {
-    // Builder State
-    private var builderTriggerType = "INSTANCE" // "INSTANCE", "MINIBOSS", "AIM", "CHAT"
-    private var selectedInstanceCategory = "DUNGEONS" // "DUNGEONS", "NETHER", "MINING", "OVERWORLD", "SPECIAL"
-    private var selectedGameInstance = GameInstanceType.DUNGEONS
-    private var selectedMobCategory = MobCategory.BLOOD_MOB
-    private var builderTargetSlot = 1
-    private var chatPatternBox: EditBox? = null
-    private var cooldownBox: EditBox? = null
+class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
+    private val mc: Minecraft get() = Minecraft.getInstance()
 
-    // Instance Categories
-    private val instanceCategories = listOf(
-        "DUNGEONS" to "🏰 Dungeons",
-        "NETHER" to "🔥 Nether",
-        "MINING" to "⛏️ Mining",
-        "OVERWORLD" to "🌲 Overworld",
-        "SPECIAL" to "🌌 Special"
-    )
+    enum class MenuView {
+        MAIN_CONFIG,
+        SELECT_LOADOUT
+    }
 
-    private val categoryInstances = mapOf(
-        "DUNGEONS" to listOf(
-            GameInstanceType.DUNGEONS to "The Catacombs",
-            GameInstanceType.DUNGEON_BOSS to "Dungeon Boss",
-            GameInstanceType.DUNGEON_HUB to "Dungeon Hub"
+    enum class ConfigTarget(
+        val displayName: String,
+        val defaultItem: Item,
+        val description: String,
+        val defaultRuleId: String,
+        val conditionFactory: () -> LoadoutCondition
+    ) {
+        CATACOMBS(
+            "The Catacombs (Dungeons)",
+            Items.BEACON,
+            "Auto-swap loadout upon entering The Catacombs or Dungeon Runs.",
+            "rule_catacombs",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.DUNGEONS) }
         ),
-        "NETHER" to listOf(
-            GameInstanceType.CRIMSON_ISLE to "Crimson Isle",
-            GameInstanceType.KUUDRA to "Kuudra Arena"
+        MINIBOSS(
+            "Miniboss Lock-On (SA/LA/AA/Midas)",
+            Items.DIAMOND_SWORD,
+            "Auto-swaps when looking at a Miniboss, then auto-reverts upon kill!",
+            "rule_miniboss",
+            { LoadoutCondition.MinibossCondition(autoRevertOnKill = true) }
         ),
-        "MINING" to listOf(
-            GameInstanceType.DWARVEN_MINES to "Dwarven Mines",
-            GameInstanceType.CRYSTAL_HOLLOWS to "Crystal Hollows",
-            GameInstanceType.MINESHAFT to "Glacite Mineshafts"
+        BLOOD_MOBS(
+            "Blood Room Mobs & Watcher",
+            Items.REDSTONE_BLOCK,
+            "Auto-swap when aiming at Blood Room mobs or The Watcher.",
+            "rule_blood",
+            { LoadoutCondition.AimCondition(MobCategory.BLOOD_MOB) }
         ),
-        "OVERWORLD" to listOf(
-            GameInstanceType.HUB to "Hub / Village",
-            GameInstanceType.GARDEN to "The Garden",
-            GameInstanceType.THE_PARK to "The Park",
-            GameInstanceType.SPIDER_DEN to "Spider's Den",
-            GameInstanceType.THE_END to "The End / Dragons"
+        KUUDRA(
+            "Kuudra Arena",
+            Items.MAGMA_CREAM,
+            "Auto-swap when entering Kuudra Arena in Crimson Isle.",
+            "rule_kuudra",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.KUUDRA) }
         ),
-        "SPECIAL" to listOf(
-            GameInstanceType.THE_RIFT to "The Rift",
-            GameInstanceType.DARK_AUCTION to "Dark Auction",
-            GameInstanceType.WINTER to "Jerry's Workshop",
-            GameInstanceType.PRIVATE_ISLAND to "Private Island"
+        CRIMSON_ISLE(
+            "Crimson Isle",
+            Items.BLAZE_POWDER,
+            "Auto-swap when on the Crimson Isle nether island.",
+            "rule_crimson",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.CRIMSON_ISLE) }
+        ),
+        MINING(
+            "Mining Islands (Dwarven / Hollows)",
+            Items.DIAMOND_PICKAXE,
+            "Auto-swap when entering Dwarven Mines, Crystal Hollows, or Mineshafts.",
+            "rule_mining",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.DWARVEN_MINES) }
+        ),
+        GARDEN(
+            "The Garden (Farming)",
+            Items.GOLDEN_HOE,
+            "Auto-swap when entering The Garden island.",
+            "rule_garden",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.GARDEN) }
+        ),
+        THE_PARK(
+            "The Park (Foraging)",
+            Items.OAK_LOG,
+            "Auto-swap when entering The Park.",
+            "rule_park",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.THE_PARK) }
+        ),
+        SPIDER_DEN(
+            "Spider's Den",
+            Items.SPIDER_EYE,
+            "Auto-swap when entering Spider's Den.",
+            "rule_spider",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.SPIDER_DEN) }
+        ),
+        THE_END(
+            "The End (Dragons & Zealots)",
+            Items.ENDER_EYE,
+            "Auto-swap when entering The End.",
+            "rule_end",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.THE_END) }
+        ),
+        THE_RIFT(
+            "The Rift",
+            Items.RECOVERY_COMPASS,
+            "Auto-swap when entering The Rift dimension.",
+            "rule_rift",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.THE_RIFT) }
+        ),
+        HUB(
+            "Hub / Village",
+            Items.EMERALD,
+            "Auto-swap when in Hub Island or Village.",
+            "rule_hub",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.HUB) }
+        ),
+        PRIVATE_ISLAND(
+            "Private Island",
+            Items.GRASS_BLOCK,
+            "Auto-swap when on your Private Island.",
+            "rule_island",
+            { LoadoutCondition.GameInstanceCondition(GameInstanceType.PRIVATE_ISLAND) }
+        ),
+        SLAYER_BOSS(
+            "Slayer Boss Aim",
+            Items.ZOMBIE_HEAD,
+            "Auto-swap when aiming at an active Slayer Boss.",
+            "rule_slayer",
+            { LoadoutCondition.AimCondition(MobCategory.SLAYER) }
+        ),
+        TOGGLE_A(
+            "Quick Toggle Set A (Keybind [V])",
+            Items.LIME_DYE,
+            "Primary quick-swap loadout bound to [V] keybind.",
+            "toggle_a",
+            { LoadoutCondition.MinibossCondition() }
+        ),
+        TOGGLE_B(
+            "Quick Toggle Set B (Keybind [V])",
+            Items.YELLOW_DYE,
+            "Secondary quick-swap loadout bound to [V] keybind.",
+            "toggle_b",
+            { LoadoutCondition.MinibossCondition() }
         )
+    }
+
+    private var currentView = MenuView.MAIN_CONFIG
+    private var activeConfigTarget: ConfigTarget? = null
+
+    private val CONTAINER_BACKGROUND = Identifier.fromNamespaceAndPath("minecraft", "textures/gui/container/generic_54.png")
+    private val imageWidth = 176
+    private val imageHeight = 222
+
+    // SkyBlock Loadout slot mapping (Hypixel /loadouts menu layout)
+    private val HYPIXEL_LOADOUT_SLOTS = listOf(
+        14 to 1, 15 to 2, 16 to 3,
+        23 to 4, 24 to 5, 25 to 6,
+        32 to 7, 33 to 8, 34 to 9,
+        41 to 10, 42 to 11, 43 to 12
     )
 
-    private val mobCategories = listOf(
-        MobCategory.BLOOD_MOB to "🩸 Blood Mobs",
-        MobCategory.WATCHER to "👁️ The Watcher",
-        MobCategory.MINIBOSS to "⚔️ Miniboss",
-        MobCategory.BOSS to "👑 Floor Boss",
-        MobCategory.SLAYER to "💀 Slayer Boss"
+    // Main Config Menu Slot Positions
+    private val MAIN_SLOT_MAP = mapOf(
+        10 to ConfigTarget.CATACOMBS,
+        11 to ConfigTarget.MINIBOSS,
+        12 to ConfigTarget.BLOOD_MOBS,
+        13 to ConfigTarget.KUUDRA,
+        14 to ConfigTarget.CRIMSON_ISLE,
+        15 to ConfigTarget.MINING,
+        16 to ConfigTarget.GARDEN,
+        19 to ConfigTarget.THE_PARK,
+        20 to ConfigTarget.SPIDER_DEN,
+        21 to ConfigTarget.THE_END,
+        22 to ConfigTarget.THE_RIFT,
+        23 to ConfigTarget.HUB,
+        24 to ConfigTarget.PRIVATE_ISLAND,
+        25 to ConfigTarget.SLAYER_BOSS,
+        30 to ConfigTarget.TOGGLE_A,
+        31 to ConfigTarget.TOGGLE_B
     )
-
-    // Scroll Offsets
-    private var scrollOffsetLeft = 0
-    private var scrollOffsetRight = 0
 
     override fun added() {
         super.added()
-        // Register Live Auto-Refresh Listener safely deferred to next tick
         LoadoutManager.onDataChanged = {
-            Minecraft.getInstance().execute {
-                if (Minecraft.getInstance().screen == this) {
+            mc.execute {
+                if (mc.screen == this) {
                     init()
                 }
             }
@@ -96,323 +197,426 @@ class LoadoutScreen : NoemtScreen(
         LoadoutManager.onDataChanged = null
     }
 
-    override fun buildUi() {
-        val ui = UiBuilder(font) { addRenderableWidget(it) }
-
-        val colWidth = (windowWidth - 44) / 2
-        val leftX = windowX + 16
-        val rightX = leftX + colWidth + 12
-
-        // Top SkyBlock Sync Button
-        ui.button("⚡ Sync SkyBlock (/loadouts)", windowX + windowWidth - 235, windowY + 8, 175, 20) {
-            LoadoutManager.requestSkyblockSync()
+    private fun createItem(
+        item: Item,
+        name: String,
+        lore: List<String> = emptyList(),
+        count: Int = 1,
+        glint: Boolean = false
+    ): ItemStack {
+        val stack = ItemStack(item, count)
+        stack.set(DataComponents.CUSTOM_NAME, Component.literal(name))
+        if (lore.isNotEmpty()) {
+            stack.set(DataComponents.LORE, ItemLore(lore.map { Component.literal(it) }))
         }
-
-        // ==========================================
-        // LEFT COLUMN: 12 SkyBlock Loadout Slots
-        // ==========================================
-        var rowY = windowY + 58 - scrollOffsetLeft
-        for (i in 1..12) {
-            val id = "loadout_$i"
-            val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $i", loadoutSlot = i)
-
-            if (rowY in (windowY + 45)..(windowY + windowHeight - 65)) {
-                val currentLo = lo
-
-                // Equip button
-                ui.button("⚡", leftX + colWidth - 96, rowY + 3, 24, 18) {
-                    LoadoutManager.swapTo(currentLo.id, "GUI Equip")
-                }
-
-                // Set Toggle A
-                val isA = LoadoutManager.loadoutAId == currentLo.id
-                ui.button(if (isA) "§a[A]" else "A", leftX + colWidth - 68, rowY + 3, 30, 18) {
-                    LoadoutManager.loadoutAId = currentLo.id
-                    Minecraft.getInstance().execute { init() }
-                }
-
-                // Set Toggle B
-                val isB = LoadoutManager.loadoutBId == currentLo.id
-                ui.button(if (isB) "§e[B]" else "B", leftX + colWidth - 34, rowY + 3, 30, 18) {
-                    LoadoutManager.loadoutBId = currentLo.id
-                    Minecraft.getInstance().execute { init() }
-                }
-            }
-            rowY += 30
+        if (glint) {
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
         }
+        return stack
+    }
 
-        // ==========================================
-        // RIGHT COLUMN TOP: Active Rules List
-        // ==========================================
-        val builderHeight = 195
-        val rulesMaxY = windowY + windowHeight - builderHeight - 35
-        var ruleY = windowY + 58 - scrollOffsetRight
-        val ruleList = LoadoutManager.rules.toList()
-
-        for (rule in ruleList) {
-            if (ruleY in (windowY + 45)..rulesMaxY) {
-                val r = rule
-                ui.button(if (r.enabled) "§a● ON" else "§c○ OFF", rightX + colWidth - 85, ruleY + 3, 46, 18) {
-                    r.enabled = !r.enabled
-                    LoadoutManager.saveData()
-                    Minecraft.getInstance().execute { init() }
-                }
-
-                ui.dangerButton("🗑", rightX + colWidth - 34, ruleY + 3, 30, 18) {
-                    LoadoutManager.removeRule(r.id)
-                }
-            }
-            ruleY += 30
-        }
-
-        // ==========================================
-        // RIGHT COLUMN BOTTOM: Rule Studio Builder
-        // ==========================================
-        val builderY = windowY + windowHeight - builderHeight - 20
-
-        // Step 1: Trigger Type Tabs (y + 16)
-        val triggerTypes = listOf(
-            "INSTANCE" to "🏰 Zone / Island",
-            "MINIBOSS" to "⚔️ Miniboss",
-            "AIM" to "🎯 Aim",
-            "CHAT" to "💬 Chat"
-        )
-        val tabWidth = (colWidth - (triggerTypes.size - 1) * 4) / triggerTypes.size
-        var tX = rightX
-        for ((tKey, tLabel) in triggerTypes) {
-            val isSel = builderTriggerType == tKey
-            ui.button(if (isSel) "§b§l$tLabel" else "§7$tLabel", tX, builderY + 16, tabWidth, 18) {
-                builderTriggerType = tKey
-                Minecraft.getInstance().execute { init() }
-            }
-            tX += tabWidth + 4
-        }
-
-        // Step 2: Categorized Condition Picker (y + 38 to y + 62)
-        when (builderTriggerType) {
-            "INSTANCE" -> {
-                // Sub-category tabs (y + 38)
-                val catTabWidth = (colWidth - (instanceCategories.size - 1) * 3) / instanceCategories.size
-                var cX = rightX
-                for ((cKey, cLabel) in instanceCategories) {
-                    val isCatSel = selectedInstanceCategory == cKey
-                    ui.button(if (isCatSel) "§e§l$cLabel" else "§8$cLabel", cX, builderY + 38, catTabWidth, 16) {
-                        selectedInstanceCategory = cKey
-                        Minecraft.getInstance().execute { init() }
-                    }
-                    cX += catTabWidth + 3
-                }
-
-                // Direct Zone Buttons for selected category (y + 57)
-                val zoneList = categoryInstances[selectedInstanceCategory] ?: emptyList()
-                val zWidth = (colWidth - (zoneList.size.coerceAtLeast(1) - 1) * 4) / zoneList.size.coerceAtLeast(1)
-                var zX = rightX
-                for ((instEnum, instName) in zoneList) {
-                    val isInstSel = selectedGameInstance == instEnum
-                    ui.button(if (isInstSel) "§a§l✓ $instName" else "§7$instName", zX, builderY + 57, zWidth, 18) {
-                        selectedGameInstance = instEnum
-                        Minecraft.getInstance().execute { init() }
-                    }
-                    zX += zWidth + 4
-                }
-            }
-
-            "AIM" -> {
-                val mobTabWidth = (colWidth - (mobCategories.size - 1) * 3) / mobCategories.size
-                var mX = rightX
-                for ((mobEnum, mobLabel) in mobCategories) {
-                    val isMobSel = selectedMobCategory == mobEnum
-                    ui.button(if (isMobSel) "§a§l✓ $mobLabel" else "§7$mobLabel", mX, builderY + 44, mobTabWidth, 18) {
-                        selectedMobCategory = mobEnum
-                        Minecraft.getInstance().execute { init() }
-                    }
-                    mX += mobTabWidth + 3
-                }
-            }
-
-            "CHAT" -> {
-                chatPatternBox = ui.textInput("Pattern", "[BOSS]", rightX + 55, builderY + 44, colWidth - 180, 18)
-                ui.button("Blood", rightX + colWidth - 120, builderY + 44, 55, 18) {
-                    chatPatternBox?.value = "BLOOD DOOR"
-                }
-                ui.button("Watcher", rightX + colWidth - 60, builderY + 44, 60, 18) {
-                    chatPatternBox?.value = "The Watcher: You have proven"
-                }
-            }
-
-            "MINIBOSS" -> {
-                // Info drawn in renderWindow
+    private fun getAssignedLoadoutName(target: ConfigTarget): String? {
+        return when (target) {
+            ConfigTarget.TOGGLE_A -> LoadoutManager.loadoutAId.takeIf { it.isNotBlank() }?.let { LoadoutManager.loadouts[it]?.name ?: it }
+            ConfigTarget.TOGGLE_B -> LoadoutManager.loadoutBId.takeIf { it.isNotBlank() }?.let { LoadoutManager.loadouts[it]?.name ?: it }
+            else -> {
+                val rule = LoadoutManager.rules.find { it.id == target.defaultRuleId }
+                rule?.targetLoadoutId?.let { LoadoutManager.loadouts[it]?.name ?: it }
             }
         }
+    }
 
-        // Step 3: Target Loadout Slot Grid (Rows: y + 80, y + 100)
-        // Render 2 rows of 6 with actual synced loadout names!
-        val sBtnWidth = (colWidth - 5 * 4) / 6
-        var sX = rightX
-        for (s in 1..6) {
-            val id = "loadout_$s"
-            val loName = LoadoutManager.loadouts[id]?.name?.take(7) ?: "Slot $s"
-            val isSel = builderTargetSlot == s
-            ui.button(if (isSel) "§6§lS$s: $loName" else "§7S$s: $loName", sX, builderY + 80, sBtnWidth, 18) {
-                builderTargetSlot = s
-                Minecraft.getInstance().execute { init() }
+    private fun isRuleEnabled(target: ConfigTarget): Boolean {
+        return when (target) {
+            ConfigTarget.TOGGLE_A, ConfigTarget.TOGGLE_B -> getAssignedLoadoutName(target) != null
+            else -> {
+                val rule = LoadoutManager.rules.find { it.id == target.defaultRuleId }
+                rule?.enabled == true
             }
-            sX += sBtnWidth + 4
         }
+    }
 
-        sX = rightX
-        for (s in 7..12) {
-            val id = "loadout_$s"
-            val loName = LoadoutManager.loadouts[id]?.name?.take(7) ?: "Slot $s"
-            val isSel = builderTargetSlot == s
-            ui.button(if (isSel) "§6§lS$s: $loName" else "§7S$s: $loName", sX, builderY + 100, sBtnWidth, 18) {
-                builderTargetSlot = s
-                Minecraft.getInstance().execute { init() }
-            }
-            sX += sBtnWidth + 4
+    private fun getSlotItem(slot: Int): ItemStack? {
+        val pane = createItem(Items.GRAY_STAINED_GLASS_PANE, " ")
+
+        return when (currentView) {
+            MenuView.MAIN_CONFIG -> getMainConfigSlotItem(slot, pane)
+            MenuView.SELECT_LOADOUT -> getSelectLoadoutSlotItem(slot, pane)
         }
+    }
 
-        // Step 4: Cooldown & Save Rule Button (Row: y + 126)
-        val actionY = builderY + 126
-        cooldownBox = ui.textInput("Cooldown", "2.5", rightX + 75, actionY, 44, 18)
+    private fun getMainConfigSlotItem(slot: Int, pane: ItemStack): ItemStack? {
+        // Config Targets
+        val configTarget = MAIN_SLOT_MAP[slot]
+        if (configTarget != null) {
+            val assigned = getAssignedLoadoutName(configTarget)
+            val enabled = isRuleEnabled(configTarget)
+            val assignedDisplay = assigned ?: "§cNone (Unassigned)"
+            val statusDisplay = if (assigned != null && enabled) "§aEnabled" else if (assigned != null) "§cDisabled" else "§7Not Configured"
 
-        ui.successButton("§a➕ Save Auto-Swap Rule", rightX + 126, actionY, colWidth - 126, 18) {
-            val targetId = "loadout_$builderTargetSlot"
-            val cdVal = cooldownBox?.value?.toDoubleOrNull() ?: 2.5
-
-            val (ruleName, condition) = when (builderTriggerType) {
-                "INSTANCE" -> {
-                    "Join ${selectedGameInstance.displayName}" to LoadoutCondition.GameInstanceCondition(instanceType = selectedGameInstance)
-                }
-                "MINIBOSS" -> {
-                    "Miniboss Encounter (Auto-Reverts on Kill)" to LoadoutCondition.MinibossCondition(autoRevertOnKill = true)
-                }
-                "AIM" -> {
-                    val mobName = selectedMobCategory.name.replace("_", " ")
-                    "Aim at $mobName" to LoadoutCondition.AimCondition(mobCategory = selectedMobCategory)
-                }
-                "CHAT" -> {
-                    val pat = chatPatternBox?.value ?: "[BOSS]"
-                    "Chat: $pat" to LoadoutCondition.ChatCondition(pattern = pat, matchType = MatchType.CONTAINS)
-                }
-                else -> "Rule" to LoadoutCondition.AimCondition(mobCategory = MobCategory.BLOOD_MOB)
-            }
-
-            val newRule = LoadoutRule(
-                id = "rule_${System.currentTimeMillis()}",
-                name = ruleName,
-                enabled = true,
-                targetLoadoutId = targetId,
-                condition = condition,
-                cooldownSeconds = cdVal
+            val lore = mutableListOf(
+                "§7${configTarget.description}",
+                "",
+                "§7Assigned Loadout: §e$assignedDisplay",
+                "§7Trigger Status: $statusDisplay",
+                ""
             )
 
-            LoadoutManager.addOrUpdateRule(newRule)
+            if (assigned != null) {
+                lore.add("§eClick to change loadout!")
+                lore.add("§bRight-Click to toggle ON/OFF!")
+            } else {
+                lore.add("§eClick to select loadout!")
+            }
+
+            return createItem(
+                configTarget.defaultItem,
+                "§a${configTarget.displayName}",
+                lore,
+                glint = enabled && assigned != null
+            )
         }
 
-        // ==========================================
-        // BOTTOM BAR CONTROLS
-        // ==========================================
-        val bottomY = windowY + windowHeight - 26
+        // Bottom Controls
         val config = ConfigManager.config.loadout
-
-        ui.toggleButton("Swapper", config.enabled, windowX + 16, bottomY, 110, 18) {
-            config.enabled = !config.enabled
-            Minecraft.getInstance().execute { init() }
-        }
-
-        ui.toggleButton("HUD", config.showHud, windowX + 132, bottomY, 80, 18) {
-            config.showHud = !config.showHud
-            Minecraft.getInstance().execute { init() }
-        }
-
-        ui.toggleButton("Sound", config.playSound, windowX + 218, bottomY, 80, 18) {
-            config.playSound = !config.playSound
-            Minecraft.getInstance().execute { init() }
-        }
-
-        val prevLoName = LoadoutManager.previousLoadoutId?.let { LoadoutManager.loadouts[it]?.name ?: it } ?: "None"
-        ui.button("🔄 Revert to Previous (Keybind [B])", windowX + windowWidth - 210, bottomY, 194, 18) {
-            LoadoutManager.swapToPrevious()
-        }
-    }
-
-    override fun renderWindow(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        val colWidth = (windowWidth - 44) / 2
-        val leftX = windowX + 16
-        val rightX = leftX + colWidth + 12
-
-        // Separator lines
-        graphics.fill(leftX + colWidth + 5, windowY + 40, leftX + colWidth + 6, windowY + windowHeight - 34, GuiTheme.BORDER_MUTED)
-        graphics.fill(windowX + 16, windowY + windowHeight - 32, windowX + windowWidth - 16, windowY + windowHeight - 31, GuiTheme.BORDER_MUTED)
-
-        // Column Titles
-        graphics.text(font, "§b§l1. SkyBlock Loadouts (Auto-Synced)", leftX, windowY + 42, GuiTheme.TEXT_WHITE, true)
-        graphics.text(font, "§b§l2. Conditional Auto-Swap Rules", rightX, windowY + 42, GuiTheme.TEXT_WHITE, true)
-
-        // Render Left Column: Loadouts
-        var rowY = windowY + 58 - scrollOffsetLeft
-        for (i in 1..12) {
-            val id = "loadout_$i"
-            val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $i", loadoutSlot = i)
-
-            if (rowY in (windowY + 45)..(windowY + windowHeight - 65)) {
-                val isActive = LoadoutManager.currentLoadoutId == lo.id
-                val rowBg = if (isActive) GuiTheme.CARD_SURFACE_ACTIVE else GuiTheme.CARD_SURFACE
-                graphics.fill(leftX, rowY, leftX + colWidth, rowY + 24, rowBg)
-
-                val badge = "§6S$i: "
-                val nameDisplay = lo.name.take(22)
-                graphics.text(font, "$badge§f$nameDisplay", leftX + 6, rowY + 7, GuiTheme.TEXT_WHITE, true)
+        when (slot) {
+            32 -> {
+                val prevName = LoadoutManager.previousLoadoutId?.let { LoadoutManager.loadouts[it]?.name ?: it } ?: "None"
+                return createItem(
+                    Items.COMPASS,
+                    "§bRevert to Previous Loadout",
+                    listOf(
+                        "§7Swaps back to the last equipped loadout.",
+                        "§7Keybind: §e[B]",
+                        "",
+                        "§7Last Loadout: §e$prevName",
+                        "",
+                        "§eClick to execute swap back now!"
+                    )
+                )
             }
-            rowY += 30
-        }
-
-        // Render Right Column: Active Rules
-        val builderHeight = 195
-        val rulesMaxY = windowY + windowHeight - builderHeight - 35
-        var ruleY = windowY + 58 - scrollOffsetRight
-        val ruleList = LoadoutManager.rules.toList()
-
-        if (ruleList.isEmpty()) {
-            graphics.text(font, "§7No active rules. Create one below!", rightX + 6, windowY + 65, Color.GRAY.rgb, false)
-        } else {
-            for (rule in ruleList) {
-                if (ruleY in (windowY + 45)..rulesMaxY) {
-                    val rowBg = if (rule.enabled) GuiTheme.CARD_SURFACE else Color(20, 24, 32, 160).rgb
-                    graphics.fill(rightX, ruleY, rightX + colWidth, ruleY + 24, rowBg)
-
-                    val targetLo = LoadoutManager.loadouts[rule.targetLoadoutId]?.name ?: rule.targetLoadoutId
-                    graphics.text(font, "§f${rule.name.take(20)} §7➜ §6$targetLo", rightX + 6, ruleY + 7, GuiTheme.TEXT_WHITE, true)
+            45 -> {
+                return if (config.enabled) {
+                    createItem(
+                        Items.LIME_DYE,
+                        "§aMaster Swapper: §lENABLED",
+                        listOf("§7Global auto-swapping is active.", "", "§eClick to disable!")
+                    )
+                } else {
+                    createItem(
+                        Items.GRAY_DYE,
+                        "§cMaster Swapper: §lDISABLED",
+                        listOf("§7Global auto-swapping is paused.", "", "§eClick to enable!")
+                    )
                 }
-                ruleY += 30
+            }
+            46 -> {
+                return createItem(
+                    Items.ITEM_FRAME,
+                    if (config.showHud) "§aHUD Display: §lON" else "§7HUD Display: §lOFF",
+                    listOf("§7Shows current loadout on screen overlay.", "", "§eClick to toggle!")
+                )
+            }
+            47 -> {
+                return createItem(
+                    Items.NOTE_BLOCK,
+                    if (config.playSound) "§aSound Effects: §lON" else "§7Sound Effects: §lOFF",
+                    listOf("§7Plays sound when loadout is equipped.", "", "§eClick to toggle!")
+                )
+            }
+            48 -> {
+                return createItem(
+                    Items.NETHER_STAR,
+                    "§eSync SkyBlock Loadouts",
+                    listOf(
+                        "§7Syncs all 12 loadouts from",
+                        "§7SkyBlock /loadouts container.",
+                        "",
+                        "§eClick to sync now!"
+                    )
+                )
+            }
+            49 -> {
+                return createItem(
+                    Items.BARRIER,
+                    "§cClose Menu",
+                    listOf("§7Click to exit menu.")
+                )
+            }
+            50 -> {
+                return createItem(
+                    Items.CLOCK,
+                    "§6Swap Cooldown: §e2.5s",
+                    listOf("§7Minimum delay between auto-swaps.", "", "§7Auto-calculated safely.")
+                )
             }
         }
 
-        // Render Rule Builder Section Header
-        val builderY = windowY + windowHeight - builderHeight - 20
-        graphics.fill(rightX, builderY - 6, rightX + colWidth, builderY - 5, GuiTheme.BORDER_MUTED)
-        graphics.text(font, "§e§l➕ Rule Studio (Trigger ➜ Equip Target Slot):", rightX, builderY + 2, GuiTheme.COLOR_WARNING, true)
-
-        if (builderTriggerType == "MINIBOSS") {
-            graphics.text(font, "§a⚡ Locks onto SA/LA/AA/Midas when aimed at & auto-reverts on kill!", rightX + 4, builderY + 48, GuiTheme.COLOR_SUCCESS, false)
-        } else if (builderTriggerType == "CHAT") {
-            graphics.text(font, "§7Pattern:", rightX + 4, builderY + 48, GuiTheme.TEXT_MUTED, false)
-        }
-        graphics.text(font, "§7Cooldown (s):", rightX + 4, builderY + 130, GuiTheme.TEXT_MUTED, false)
-    }
-
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        val colWidth = (windowWidth - 44) / 2
-
-        if (mouseX < windowX + colWidth + 16) {
-            if (scrollY > 0) scrollOffsetLeft = (scrollOffsetLeft - 24).coerceAtLeast(0)
-            else if (scrollY < 0) scrollOffsetLeft = (scrollOffsetLeft + 24).coerceAtMost(220)
+        // Filler Panes
+        return if (slot in 0..8 || slot in listOf(9, 17, 18, 26, 27, 35, 36, 44, 51, 52, 53)) {
+            pane
         } else {
-            if (scrollY > 0) scrollOffsetRight = (scrollOffsetRight - 24).coerceAtLeast(0)
-            else if (scrollY < 0) scrollOffsetRight = (scrollOffsetRight + 24).coerceAtMost(180)
+            null
         }
-        Minecraft.getInstance().execute { init() }
-        return true
     }
+
+    private fun getSelectLoadoutSlotItem(slot: Int, pane: ItemStack): ItemStack? {
+        val target = activeConfigTarget ?: ConfigTarget.CATACOMBS
+        val assigned = getAssignedLoadoutName(target)
+
+        // 12 Loadout Slots
+        val loadoutEntry = HYPIXEL_LOADOUT_SLOTS.find { it.first == slot }
+        if (loadoutEntry != null) {
+            val loadoutNum = loadoutEntry.second
+            val id = "loadout_$loadoutNum"
+            val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $loadoutNum", loadoutSlot = loadoutNum)
+            val isSelected = assigned == lo.name || assigned == id
+
+            val lore = mutableListOf(
+                "§7Loadout Slot: §fSlot $loadoutNum",
+                "§7Pet: §6${lo.petName ?: "None"}",
+                ""
+            )
+
+            if (isSelected) {
+                lore.add("§a✓ Currently Selected for ${target.displayName}")
+                lore.add("")
+                lore.add("§eClick to re-select!")
+            } else {
+                lore.add("§eClick to assign this loadout!")
+            }
+
+            val iconItem = when (loadoutNum) {
+                1 -> Items.NETHERITE_CHESTPLATE
+                2 -> Items.DIAMOND_CHESTPLATE
+                3 -> Items.GOLDEN_CHESTPLATE
+                4 -> Items.IRON_CHESTPLATE
+                5 -> Items.CHAINMAIL_CHESTPLATE
+                6 -> Items.LEATHER_CHESTPLATE
+                7 -> Items.DIAMOND_HELMET
+                8 -> Items.GOLDEN_HELMET
+                9 -> Items.IRON_HELMET
+                10 -> Items.CHAINMAIL_HELMET
+                11 -> Items.LEATHER_HELMET
+                else -> Items.TURTLE_HELMET
+            }
+
+            return createItem(
+                iconItem,
+                "§aLoadout #$loadoutNum: §f${lo.name}",
+                lore,
+                glint = isSelected
+            )
+        }
+
+        // Controls
+        when (slot) {
+            48 -> {
+                return createItem(
+                    Items.RED_STAINED_GLASS_PANE,
+                    "§cUnassign / None",
+                    listOf(
+                        "§7Removes the assigned loadout for",
+                        "§e${target.displayName}",
+                        "",
+                        "§eClick to unassign!"
+                    )
+                )
+            }
+            49 -> {
+                return createItem(
+                    Items.ARROW,
+                    "§aGo Back",
+                    listOf("§7To Auto Loadout Swapper Menu")
+                )
+            }
+        }
+
+        return if (slot in 0..8 || slot in listOf(9, 17, 18, 26, 27, 35, 36, 44, 45, 46, 47, 50, 51, 52, 53)) {
+            pane
+        } else {
+            null
+        }
+    }
+
+    override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
+        // Dark screen backdrop
+        graphics.fill(0, 0, width, height, 0xCC101010.toInt())
+
+        val left = (width - imageWidth) / 2
+        val top = (height - imageHeight) / 2
+
+        // Draw Chest Container Texture
+        graphics.blit(RenderPipelines.GUI_TEXTURED, CONTAINER_BACKGROUND, left, top, 0f, 0f, imageWidth, imageHeight, 256, 256, -1)
+
+        // Chest Title
+        val menuTitle = when (currentView) {
+            MenuView.MAIN_CONFIG -> "Auto Loadout Swapper"
+            MenuView.SELECT_LOADOUT -> "Select: ${activeConfigTarget?.displayName?.take(18)}"
+        }
+        graphics.text(font, menuTitle, left + 8, top + 6, 0x404040, false)
+
+        var hoveredItem: ItemStack? = null
+
+        // Render 54 Slots
+        for (idx in 0..53) {
+            val row = idx / 9
+            val col = idx % 9
+            val slotX = left + 8 + (col * 18)
+            val slotY = top + 18 + (row * 18)
+
+            val item = getSlotItem(idx)
+            if (item != null && !item.isEmpty) {
+                graphics.item(item, slotX, slotY)
+                graphics.itemDecorations(font, item, slotX, slotY)
+            }
+
+            // Hover check
+            if (mouseX in slotX..(slotX + 16) && mouseY in slotY..(slotY + 16)) {
+                graphics.fill(slotX, slotY, slotX + 16, slotY + 16, 0x80FFFFFF.toInt())
+                if (item != null && !item.isEmpty) {
+                    hoveredItem = item
+                }
+            }
+        }
+
+        // Render Tooltip
+        if (hoveredItem != null) {
+            graphics.setTooltipForNextFrame(font, hoveredItem, mouseX, mouseY)
+        }
+
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick)
+    }
+
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
+        val left = (width - imageWidth) / 2
+        val top = (height - imageHeight) / 2
+        val mouseX = event.x().toInt()
+        val mouseY = event.y().toInt()
+        val button = event.button()
+
+        for (idx in 0..53) {
+            val row = idx / 9
+            val col = idx % 9
+            val slotX = left + 8 + (col * 18)
+            val slotY = top + 18 + (row * 18)
+
+            if (mouseX in slotX..(slotX + 16) && mouseY in slotY..(slotY + 16)) {
+                val handled = handleSlotClick(idx, button)
+                if (handled) {
+                    mc.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0f))
+                    return true
+                }
+            }
+        }
+
+        return super.mouseClicked(event, doubleClick)
+    }
+
+    private fun handleSlotClick(slot: Int, mouseButton: Int): Boolean {
+        when (currentView) {
+            MenuView.MAIN_CONFIG -> {
+                val target = MAIN_SLOT_MAP[slot]
+                if (target != null) {
+                    if (mouseButton == 1) { // Right Click: Toggle ON/OFF
+                        val rule = LoadoutManager.rules.find { it.id == target.defaultRuleId }
+                        if (rule != null) {
+                            rule.enabled = !rule.enabled
+                            LoadoutManager.saveData()
+                            return true
+                        }
+                    }
+                    // Left Click: Open Loadout Picker Sub-menu
+                    activeConfigTarget = target
+                    currentView = MenuView.SELECT_LOADOUT
+                    return true
+                }
+
+                val config = ConfigManager.config.loadout
+                when (slot) {
+                    32 -> {
+                        LoadoutManager.swapToPrevious()
+                        return true
+                    }
+                    45 -> {
+                        config.enabled = !config.enabled
+                        return true
+                    }
+                    46 -> {
+                        config.showHud = !config.showHud
+                        return true
+                    }
+                    47 -> {
+                        config.playSound = !config.playSound
+                        return true
+                    }
+                    48 -> {
+                        LoadoutManager.requestSkyblockSync()
+                        return true
+                    }
+                    49 -> {
+                        onClose()
+                        return true
+                    }
+                }
+            }
+
+            MenuView.SELECT_LOADOUT -> {
+                val target = activeConfigTarget ?: return false
+
+                // Clicked a Loadout Slot
+                val loadoutEntry = HYPIXEL_LOADOUT_SLOTS.find { it.first == slot }
+                if (loadoutEntry != null) {
+                    val loadoutNum = loadoutEntry.second
+                    val targetLoadoutId = "loadout_$loadoutNum"
+
+                    when (target) {
+                        ConfigTarget.TOGGLE_A -> {
+                            LoadoutManager.loadoutAId = targetLoadoutId
+                        }
+                        ConfigTarget.TOGGLE_B -> {
+                            LoadoutManager.loadoutBId = targetLoadoutId
+                        }
+                        else -> {
+                            val newRule = LoadoutRule(
+                                id = target.defaultRuleId,
+                                name = target.displayName,
+                                enabled = true,
+                                targetLoadoutId = targetLoadoutId,
+                                condition = target.conditionFactory(),
+                                cooldownSeconds = 2.5
+                            )
+                            LoadoutManager.addOrUpdateRule(newRule)
+                        }
+                    }
+
+                    LoadoutManager.saveData()
+                    currentView = MenuView.MAIN_CONFIG
+                    return true
+                }
+
+                // Unassign Button
+                if (slot == 48) {
+                    when (target) {
+                        ConfigTarget.TOGGLE_A -> LoadoutManager.loadoutAId = ""
+                        ConfigTarget.TOGGLE_B -> LoadoutManager.loadoutBId = ""
+                        else -> LoadoutManager.removeRule(target.defaultRuleId)
+                    }
+                    LoadoutManager.saveData()
+                    currentView = MenuView.MAIN_CONFIG
+                    return true
+                }
+
+                // Go Back Button
+                if (slot == 49) {
+                    currentView = MenuView.MAIN_CONFIG
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    override fun isPauseScreen(): Boolean = false
 }

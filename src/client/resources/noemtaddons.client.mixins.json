@@ -10,6 +10,7 @@
 		"IMapState",
 		"IPlayerInfo",
 		"IKeyMapping",
+		"IContainerScreenAccessor",
 		"MixinCommandSuggestions",
 		"MixinChatScreen"
 	],
