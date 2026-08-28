@@ -60,6 +60,16 @@ object AutoBloodCamp : Module {
             resetCampState()
         }
 
+        register<DungeonEvent.RunEndedEvent> {
+            resetCampState()
+        }
+
+        register<DungeonEvent.RoomEvent.onEnter> {
+            if (event.room.data.type == RoomType.ENTRANCE) {
+                resetCampState()
+            }
+        }
+
         register<ChatMessageEvent> {
             val text = event.unformattedText
 
@@ -128,8 +138,12 @@ object AutoBloodCamp : Module {
                 return@register
             }
 
-            // Only activate once Watcher has sent at least 2 dialogue messages
-            if (watcherMessageCount < 2) {
+            // Activate as soon as Watcher is active or blood mobs/spawns are present
+            val isWatcherActive = watcherMessageCount >= 1 ||
+                    BloodCamp.bloodMobs.isNotEmpty() ||
+                    DungeonListener.bloodOpenTime != null ||
+                    BloodCamp.watcherEntity != null
+            if (!isWatcherActive) {
                 if (PathfindingUtils.isControllingMovement) PathfindingUtils.stopMovement()
                 MouseRotationHelper.clearTarget()
                 return@register
@@ -446,19 +460,26 @@ object AutoBloodCamp : Module {
         val player = mc.player ?: return false
         val playerPos = player.position()
 
-        // 1. ScanUtils current room
+        // 1. Proximity to Watcher entity
+        val watcher = BloodCamp.watcherEntity
+        if (watcher != null && player.distanceTo(watcher) < 36.0) return true
+
+        // 2. ScanUtils current room
         val current = ScanUtils.currentRoom
         if (current?.data?.type == RoomType.BLOOD) return true
 
-        // 2. ScanUtils pos room
+        // 3. ScanUtils pos room
         val atPos = ScanUtils.getRoomFromPos(playerPos)
         if (atPos?.data?.type == RoomType.BLOOD) return true
 
-        // 3. Tile proximity check
+        // 4. Tile proximity check
         return isInsideBloodRoom(playerPos)
     }
 
     fun isInsideBloodRoom(vec: Vec3): Boolean {
+        val watcher = BloodCamp.watcherEntity
+        if (watcher != null && vec.distanceTo(watcher.position()) < 36.0) return true
+
         val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
             ?: DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }?.uniqueRoom
 
@@ -466,10 +487,10 @@ object AutoBloodCamp : Module {
             val tiles = bloodRoom.tiles.filterIsInstance<RoomTile>()
             if (tiles.isNotEmpty()) {
                 return tiles.any { tile ->
-                    abs(vec.x - tile.x) <= 15.5 && abs(vec.z - tile.z) <= 15.5
+                    abs(vec.x - tile.x) <= 16.5 && abs(vec.z - tile.z) <= 16.5
                 }
             }
-            return abs(vec.x - bloodRoom.centerPos.x) <= 15.5 && abs(vec.z - bloodRoom.centerPos.z) <= 15.5
+            return abs(vec.x - bloodRoom.centerPos.x) <= 16.5 && abs(vec.z - bloodRoom.centerPos.z) <= 16.5
         }
 
         return ScanUtils.getRoomFromPos(vec)?.data?.type == RoomType.BLOOD

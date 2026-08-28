@@ -65,7 +65,7 @@ sealed class LoadoutCondition {
             val loc = context.location ?: return false
             val locUpper = loc.uppercase()
             if (instanceType.negativeKeywords.any { locUpper.contains(it) }) return false
-            return instanceType.keywords.any { locUpper.contains(it) }
+            return instanceType.keywords.any { locUpper.contains(it) } || locUpper.contains(instanceType.name)
         }
     }
 

@@ -11,6 +11,7 @@ import dev.noemt.client.utils.ChatUtils.removeFormatting
 import dev.noemt.client.utils.ItemUtils
 import dev.noemt.client.utils.ItemUtils.lore
 import dev.noemt.client.utils.ItemUtils.skyblockId
+import dev.noemt.client.utils.LocationUtils
 import dev.noemt.client.utils.PlayerUtils
 import dev.noemt.client.utils.ScoreboardUtils
 import net.minecraft.client.Minecraft
@@ -260,6 +261,12 @@ object LoadoutManager {
         minibossDisappearedTicks = 0
     }
 
+    private var dungeonRunTriggeredThisFloor: Boolean = false
+
+    fun resetDungeonRunTrigger() {
+        dungeonRunTriggeredThisFloor = false
+    }
+
     fun onWorldChange() {
         lastDetectedInstance = null
         lastDetectedArea = ""
@@ -267,8 +274,52 @@ object LoadoutManager {
         wasDeadOrGhost = false
         pendingRespawnSwapLoadoutId = null
         pendingRespawnReason = ""
+        dungeonRunTriggeredThisFloor = false
         resetMinibossState()
         resetSwap()
+    }
+
+    fun onPlayerManualLoadoutSelect(id: String, source: String = "Manual") {
+        if (!loadouts.containsKey(id)) return
+        if (currentLoadoutId != id) {
+            previousLoadoutId = currentLoadoutId
+            currentLoadoutId = id
+            val name = loadouts[id]?.name ?: id
+            ChatUtils.modMessage("&b[Loadout] &aTracked active loadout: &e$name &7($source)")
+            notifyDataChanged()
+        }
+    }
+
+    fun onChatMessage(unformatted: String) {
+        val clean = unformatted.removeFormatting().trim()
+
+        // 1. Direct Regex checks for numbered loadouts
+        val numRegex = Regex("""(?:Loadout\s+(\d+)\s+is\s+already\s+equipped|Equipped\s+(?:loadout\s+)?(\d+)|Equipping\s+Loadout\s+(\d+)|Swapped\s+to\s+loadout\s+(\d+)|Selected\s+Loadout\s+(\d+)|You\s+equipped\s+Loadout\s+(\d+)|Loadout\s+(\d+)\s+equipped)""", RegexOption.IGNORE_CASE)
+        val match = numRegex.find(clean)
+        if (match != null) {
+            val num = match.groupValues.drop(1).firstOrNull { it.isNotBlank() }?.toIntOrNull()
+            if (num != null && num in 1..12) {
+                onPlayerManualLoadoutSelect("loadout_$num", "Chat Sync")
+                return
+            }
+        }
+
+        // 2. Custom Named Loadouts match
+        for ((id, loadout) in loadouts) {
+            val name = loadout.name.removeFormatting().trim()
+            if (name.length < 2) continue
+            if (clean.contains("$name is already equipped", ignoreCase = true) ||
+                clean.contains("Equipped loadout $name", ignoreCase = true) ||
+                clean.contains("Equipped: $name", ignoreCase = true) ||
+                clean.contains("Equipped $name", ignoreCase = true) ||
+                clean.contains("Swapped to $name", ignoreCase = true) ||
+                clean.contains("Selected $name", ignoreCase = true) ||
+                clean.contains("You equipped $name", ignoreCase = true)
+            ) {
+                onPlayerManualLoadoutSelect(id, "Chat Sync")
+                return
+            }
+        }
     }
 
     // ==========================================
@@ -290,7 +341,11 @@ object LoadoutManager {
             return
         }
 
-        if (!force && currentLoadoutId == id && isExecutingSwap) {
+        if (!force && currentLoadoutId == id) {
+            return
+        }
+
+        if (!force && isExecutingSwap) {
             return
         }
 
@@ -444,10 +499,33 @@ object LoadoutManager {
         val detected = ScoreboardUtils.detectGameInstance() ?: return
         val (instanceType, areaName) = detected
 
-        if (instanceType != lastDetectedInstance || areaName != lastDetectedArea) {
+        val instanceChanged = instanceType != lastDetectedInstance || areaName != lastDetectedArea
+        if (instanceChanged) {
             lastDetectedInstance = instanceType
             lastDetectedArea = areaName
+            dungeonRunTriggeredThisFloor = false
             checkConditions(ConditionContext(location = "$areaName ${instanceType.name}"))
+        }
+
+        // Fresh dungeon run detection on floor restart, requeue, or Green Room entrance
+        if (instanceType == GameInstanceType.DUNGEONS || LocationUtils.inDungeon) {
+            val player = mc.player
+            val currentRoom = player?.let { dev.noemt.client.utils.map.utils.ScanUtils.currentRoom ?: dev.noemt.client.utils.map.utils.ScanUtils.getRoomFromPos(it.position()) }
+            val inGreenRoom = currentRoom?.data?.type == dev.noemt.client.utils.map.core.RoomType.ENTRANCE
+
+            val lines = ScoreboardUtils.getSidebarLines()
+            val isFreshDungeonRun = inGreenRoom || lines.any { line ->
+                line.contains("Cleared: 0%", ignoreCase = true) ||
+                line.contains("Time Elapsed: 00s", ignoreCase = true) ||
+                line.contains("Time Elapsed: 01s", ignoreCase = true) ||
+                line.contains("Time Elapsed: 02s", ignoreCase = true)
+            }
+            if (isFreshDungeonRun && !dungeonRunTriggeredThisFloor) {
+                dungeonRunTriggeredThisFloor = true
+                checkConditions(ConditionContext(location = "$areaName DUNGEONS"))
+            } else if (!isFreshDungeonRun && lines.any { it.contains("Cleared:", ignoreCase = true) && !it.contains("Cleared: 0%", ignoreCase = true) }) {
+                dungeonRunTriggeredThisFloor = true
+            }
         }
     }
 
@@ -496,6 +574,15 @@ object LoadoutManager {
             val petLine = lore.find { it.contains("Pet:", ignoreCase = true) }
             val extractedPet = petLine?.removeFormatting()?.substringAfter("Pet:")?.trim()?.takeIf { it.isNotBlank() }
 
+            // Check if this slot is the currently equipped one in SkyBlock
+            val isEquippedInSkyblock = lore.any { line ->
+                val cl = line.removeFormatting().lowercase().trim()
+                (cl.contains("currently equipped") || cl.contains("already equipped") || cl == "equipped!" || cl == "equipped" || cl.contains("active loadout")) && !cl.contains("click to equip")
+            }
+            if (isEquippedInSkyblock) {
+                onPlayerManualLoadoutSelect(id, "Container Sync")
+            }
+
             if (existing != null) {
                 existing.name = rawName
                 existing.loadoutSlot = loadoutNum
@@ -520,7 +607,7 @@ object LoadoutManager {
                     hasGlint = hasGlint,
                     loreLines = lore,
                     petName = extractedPet,
-                    slot = if (index < 9) index else null
+                    slot = null
                 )
             }
             syncedCount++
@@ -658,7 +745,7 @@ object LoadoutManager {
                 name = defaultName,
                 loadoutSlot = i,
                 openCommand = "/loadouts",
-                slot = if (i <= 9) (i - 1) else null
+                slot = null
             )
         }
 
@@ -728,6 +815,9 @@ object LoadoutManager {
                             loadouts.clear()
                             for ((k, v) in loaded) {
                                 v.openCommand = "/loadouts"
+                                if (v.slot == (v.loadoutSlot - 1)) {
+                                    v.slot = null
+                                }
                                 loadouts[k] = v
                             }
                         }
@@ -738,6 +828,9 @@ object LoadoutManager {
                             loadouts.clear()
                             for ((k, v) in loaded) {
                                 v.openCommand = "/loadouts"
+                                if (v.slot == (v.loadoutSlot - 1)) {
+                                    v.slot = null
+                                }
                                 loadouts[k] = v
                             }
                         }

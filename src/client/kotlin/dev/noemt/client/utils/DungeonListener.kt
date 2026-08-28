@@ -128,10 +128,17 @@ object DungeonListener {
                     bloodOpenTime = DualTime(currentTime)
                 }
 
-                unformatted == "[NPC] Mort: Here, I found this map when I first entered the dungeon." -> {
-                    dungeonStartTime = DualTime(currentTime)
-                    dungeonStarted = true
-                    EventBus.post(DungeonEvent.RunStatedEvent)
+                unformatted.startsWith("[NPC] Mort:", ignoreCase = true) ||
+                unformatted.startsWith("Dungeon starts in", ignoreCase = true) ||
+                unformatted.startsWith("Starting in", ignoreCase = true) ||
+                unformatted.contains("Entering The Catacombs", ignoreCase = true) ||
+                unformatted.contains("The dungeon has begun!", ignoreCase = true) -> {
+                    if (!dungeonStarted || dungeonEnded) {
+                        dungeonStartTime = DualTime(currentTime)
+                        dungeonStarted = true
+                        dungeonEnded = false
+                        EventBus.post(DungeonEvent.RunStatedEvent)
+                    }
                 }
 
                 else -> {

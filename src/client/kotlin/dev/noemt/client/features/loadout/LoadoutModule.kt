@@ -62,10 +62,14 @@ object LoadoutModule : Module {
             LoadoutManager.onWorldChange()
         }
 
-        // 2. Chat Message Trigger & Miniboss Kill Detection
+        // 2. Chat Message Trigger & Miniboss Kill Detection & Player Manual Swaps
         register<ChatMessageEvent> {
-            if (!ConfigManager.config.loadout.enabled) return@register
             val text = event.unformattedText
+
+            // Sync Player-Made Loadout Swaps from Chat (e.g. "Loadout 1 is already equipped!", "Equipped loadout 2!")
+            LoadoutManager.onChatMessage(text)
+
+            if (!ConfigManager.config.loadout.enabled) return@register
 
             // Check Miniboss Kill to Auto-Revert Loadout
             if (LoadoutManager.inMinibossFight) {
@@ -101,6 +105,13 @@ object LoadoutModule : Module {
         register<dev.noemt.client.event.impl.DungeonEvent.RunStatedEvent> {
             if (!ConfigManager.config.loadout.enabled) return@register
             LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs DUNGEONS"))
+        }
+
+        register<dev.noemt.client.event.impl.DungeonEvent.RoomEvent.onEnter> {
+            if (!ConfigManager.config.loadout.enabled) return@register
+            if (event.room.data.type == dev.noemt.client.utils.map.core.RoomType.ENTRANCE) {
+                LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs DUNGEONS"))
+            }
         }
 
         // 5. Tick Event for Keybinds & Aim Triggers & Swap State Machine
