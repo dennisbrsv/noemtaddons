@@ -21,6 +21,7 @@ import struct
 import logging
 import argparse
 import subprocess
+import email.utils
 import urllib.request
 import urllib.parse
 from datetime import datetime
@@ -42,7 +43,7 @@ JARS_DIR: Path = REPO_DIR / "build" / "libs"
 AUTH_FILE: Path = Path(__file__).parent / "server_auth.json"
 DISCORD_WEBHOOK: Optional[str] = os.getenv("DISCORD_WEBHOOK_URL")
 GIT_BRANCH: str = "master"
-POLL_INTERVAL: int = 60
+POLL_INTERVAL: int = 0
 AUTH_SECRET: Optional[str] = None
 
 # Runtime State
@@ -264,14 +265,15 @@ class AutoBuilder:
         loop = asyncio.get_event_loop()
 
         # 1. Pull Git Updates
-        if commits:
-            logger.info(f"📥 Pulling {len(commits)} commits from origin/{GIT_BRANCH}...")
-            pull_res = await loop.run_in_executor(
-                None,
-                lambda: subprocess.run(["git", "pull", "origin", GIT_BRANCH], cwd=REPO_DIR, capture_output=True, text=True)
-            )
-            if pull_res.returncode != 0:
-                logger.error(f"Git pull failed:\n{pull_res.stderr}")
+        logger.info(f"📥 Pulling latest commits from origin/{GIT_BRANCH}...")
+        pull_res = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(["git", "pull", "origin", GIT_BRANCH], cwd=REPO_DIR, capture_output=True, text=True)
+        )
+        if pull_res.returncode == 0:
+            logger.info(f"📥 Git pull succeeded: {pull_res.stdout.strip()}")
+        else:
+            logger.warning(f"⚠️ Git pull notice: {pull_res.stderr.strip() or pull_res.stdout.strip()}")
 
         # 2. Update In-Game Changelog
         short_hash, author, latest_msg = AutoBuilder.get_latest_commit_details()
@@ -531,14 +533,14 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
     if not clean_path:
         clean_path = "/"
 
-    # 1. GitHub Webhook Trigger
-    if method == "POST" and clean_path in ("/api/webhook", "/api/github-webhook"):
+    # 1. Instant GitHub Webhook / Deploy API Trigger (No polling needed)
+    if clean_path in ("/api/webhook", "/api/github-webhook", "/api/webhook/github", "/webhook", "/deploy", "/api/build", "/build"):
         content_len = int(headers.get("content-length", 0))
         if content_len > 0:
             await reader.readexactly(content_len)
-        logger.info(f"⚡ GitHub Push Webhook from {client_ip}! Starting CI/CD build...")
-        asyncio.create_task(AutoBuilder.run_build(trigger_source="GitHub Webhook"))
-        send_http_response(writer, 200, "application/json", b'{"status":"Build triggered"}')
+        logger.info(f"⚡ Instant Webhook / Build Trigger from {client_ip}! Pulling origin/{GIT_BRANCH} & building...")
+        asyncio.create_task(AutoBuilder.run_build(trigger_source=f"Instant Webhook ({client_ip})"))
+        send_http_response(writer, 200, "application/json", b'{"status":"Instant build pipeline initiated","success":true}')
         return
 
     # 2. Version Metadata API
@@ -556,20 +558,20 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
 
     # 4. Mod Payload JAR Downloads (Requested by loaders on game startup)
     if clean_path in ("/loaders/noemtaddons-legit.jar", "/download/legit", "/download/noemtaddons-legit.jar"):
-        serve_jar_file(writer, "legit", client_ip)
+        serve_jar_file(writer, "legit", headers, client_ip)
         return
 
     if clean_path in ("/loaders/noemtaddons-cheat.jar", "/download/cheat", "/download/noemtaddons-cheat.jar"):
-        serve_jar_file(writer, "cheat", client_ip)
+        serve_jar_file(writer, "cheat", headers, client_ip)
         return
 
-    # 5. Bootstrap Loader JAR Downloads (The 6.7KB files given to users to put in .minecraft/mods)
+    # 5. Bootstrap Loader JAR Downloads (The 7KB files given to users to put in .minecraft/mods)
     if clean_path in ("/download/loaders/legit", "/loaders/noemtaddons-legit-loader.jar", "/loaders/legit-loader.jar"):
-        serve_loader_stub_file(writer, "legit", client_ip)
+        serve_loader_stub_file(writer, "legit", headers, client_ip)
         return
 
     if clean_path in ("/download/loaders/cheat", "/loaders/noemtaddons-cheat-loader.jar", "/loaders/cheat-loader.jar"):
-        serve_loader_stub_file(writer, "cheat", client_ip)
+        serve_loader_stub_file(writer, "cheat", headers, client_ip)
         return
 
     # 6. Login POST Request
@@ -660,26 +662,57 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
     send_http_response(writer, 404, "text/plain", b"404 Not Found")
 
 
-def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, client_ip: str):
+def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, headers: dict, client_ip: str):
     jar_path = get_jar_path(flavor)
     if not jar_path or not jar_path.exists():
         logger.warning(f"Requested {flavor} jar not found for {client_ip}")
         send_http_response(writer, 404, "text/plain", f"Error: {flavor} mod build not found on server.".encode("utf-8"))
         return
 
-    file_size = jar_path.stat().st_size
-    logger.info(f"📤 Serving {flavor} payload jar ({file_size} bytes) to {client_ip}")
+    stat = jar_path.stat()
+    file_size = stat.st_size
+    mtime = stat.st_mtime
+    http_mtime = email.utils.formatdate(mtime, usegmt=True)
+    etag = f'"{hashlib.md5(f"{flavor}_{mtime}_{file_size}".encode()).hexdigest()}"'
 
-    headers = [
+    # 1. Check If-Modified-Since
+    ims = headers.get("if-modified-since")
+    if ims:
+        try:
+            ims_time = email.utils.parsedate_to_datetime(ims).timestamp()
+            if ims_time >= int(mtime):
+                logger.info(f"⚡ 304 Not Modified for {flavor} payload to {client_ip}")
+                resp = "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n"
+                writer.write(resp.encode("utf-8"))
+                writer.close()
+                return
+        except Exception:
+            pass
+
+    # 2. Check If-None-Match
+    inm = headers.get("if-none-match")
+    if inm and inm.strip() == etag:
+        logger.info(f"⚡ 304 Not Modified (ETag) for {flavor} payload to {client_ip}")
+        resp = "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n"
+        writer.write(resp.encode("utf-8"))
+        writer.close()
+        return
+
+    logger.info(f"📤 Serving updated {flavor} payload jar ({file_size} bytes) to {client_ip}")
+
+    headers_out = [
         "HTTP/1.1 200 OK",
         "Content-Type: application/java-archive",
         f"Content-Length: {file_size}",
+        f"Last-Modified: {http_mtime}",
+        f"ETag: {etag}",
         f"Content-Disposition: attachment; filename=\"noemtaddons-{flavor}.jar\"",
+        "Cache-Control: public, no-cache",
         "Access-Control-Allow-Origin: *",
         "Connection: close",
         "\r\n"
     ]
-    writer.write("\r\n".join(headers).encode("utf-8"))
+    writer.write("\r\n".join(headers_out).encode("utf-8"))
 
     with open(jar_path, "rb") as f:
         while chunk := f.read(65536):
@@ -688,26 +721,43 @@ def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, client_ip: str):
     writer.close()
 
 
-def serve_loader_stub_file(writer: asyncio.StreamWriter, flavor: str, client_ip: str):
+def serve_loader_stub_file(writer: asyncio.StreamWriter, flavor: str, headers: dict, client_ip: str):
     loader_path = get_loader_jar_path(flavor)
     if not loader_path or not loader_path.exists():
         logger.warning(f"Requested {flavor} loader jar not found for {client_ip}")
         send_http_response(writer, 404, "text/plain", f"Error: {flavor} loader build not found on server.".encode("utf-8"))
         return
 
-    file_size = loader_path.stat().st_size
+    stat = loader_path.stat()
+    file_size = stat.st_size
+    mtime = stat.st_mtime
+    http_mtime = email.utils.formatdate(mtime, usegmt=True)
+
+    ims = headers.get("if-modified-since")
+    if ims:
+        try:
+            ims_time = email.utils.parsedate_to_datetime(ims).timestamp()
+            if ims_time >= int(mtime):
+                resp = "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n"
+                writer.write(resp.encode("utf-8"))
+                writer.close()
+                return
+        except Exception:
+            pass
+
     logger.info(f"📤 Serving {flavor} bootstrap loader jar ({file_size} bytes) to {client_ip}")
 
-    headers = [
+    headers_out = [
         "HTTP/1.1 200 OK",
         "Content-Type: application/java-archive",
         f"Content-Length: {file_size}",
+        f"Last-Modified: {http_mtime}",
         f"Content-Disposition: attachment; filename=\"noemtaddons-{flavor}-loader.jar\"",
         "Access-Control-Allow-Origin: *",
         "Connection: close",
         "\r\n"
     ]
-    writer.write("\r\n".join(headers).encode("utf-8"))
+    writer.write("\r\n".join(headers_out).encode("utf-8"))
 
     with open(loader_path, "rb") as f:
         while chunk := f.read(65536):
@@ -904,14 +954,16 @@ def render_dashboard_page() -> str:
         for name, info in clients.items():
             player_rows += f"""
             <tr>
-                <td style="display:flex; align-items:center; gap:10px;">
-                    <div class="avatar-chip">{name[:1].upper()}</div>
-                    <div>
-                        <b>{name}</b>
-                        <div style="font-size:11px; color:var(--google-text-secondary);">{info['uuid'][:12]}...</div>
+                <td>
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div class="avatar-chip">{name[:1].upper()}</div>
+                        <div>
+                            <div style="font-weight:500; color:var(--google-text);">{name}</div>
+                            <div style="font-size:11px; font-family:'Roboto Mono',monospace; color:var(--google-text-secondary);">{info['uuid'][:12]}...</div>
+                        </div>
                     </div>
                 </td>
-                <td><span class="status-pill status-healthy">● RUNNING</span></td>
+                <td><span class="status-pill status-healthy"><span class="pulse-dot"></span> RUNNING</span></td>
                 <td><code>{info['ip']}</code></td>
                 <td><span class="badge-chip">v{info['version']}</span></td>
                 <td style="color:var(--google-text-secondary); font-size:12px;">{info['connected_at']}</td>
@@ -925,7 +977,7 @@ def render_dashboard_page() -> str:
             </tr>
             """
     else:
-        player_rows = '<tr><td colspan="6" style="text-align:center; padding: 36px; color: var(--google-text-secondary);"><i>No client instances currently connected to Noemt Cloud.</i></td></tr>'
+        player_rows = '<tr><td colspan="6" style="text-align:center; padding: 48px 16px; color: var(--google-text-secondary);"><div style="font-size:28px; margin-bottom:8px;">🎮</div><div style="font-size:14px; font-weight:500;">No Active Client Instances Connected</div><div style="font-size:12px; margin-top:4px; opacity:0.8;">Launch Minecraft with NoemtAddons to establish live WebSocket telemetry link.</div></td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -935,7 +987,7 @@ def render_dashboard_page() -> str:
     <title>Google Cloud Console • NoemtAddons Control Plane</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {{
             --google-blue: #8ab4f8;
@@ -946,7 +998,9 @@ def render_dashboard_page() -> str:
             --google-bg: #131314;
             --google-surface: #1e1f20;
             --google-surface-variant: #28292a;
+            --google-surface-hover: #323335;
             --google-border: #444746;
+            --google-border-subtle: rgba(255, 255, 255, 0.08);
             --google-text: #e3e3e3;
             --google-text-secondary: #c4c7c5;
         }}
@@ -956,19 +1010,21 @@ def render_dashboard_page() -> str:
             color: var(--google-text);
             font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
             min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
         }}
         /* Google Cloud Top Bar */
         .google-app-bar {{
-            height: 48px;
+            height: 52px;
             background: var(--google-surface);
             border-bottom: 1px solid var(--google-border);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 16px;
+            padding: 0 20px;
             position: sticky;
             top: 0;
             z-index: 100;
+            backdrop-filter: blur(12px);
         }}
         .bar-left {{
             display: flex;
@@ -978,11 +1034,12 @@ def render_dashboard_page() -> str:
         .bar-brand {{
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
             font-size: 15px;
             font-weight: 500;
             color: var(--google-text);
             text-decoration: none;
+            letter-spacing: -0.2px;
         }}
         .project-selector {{
             display: flex;
@@ -991,14 +1048,20 @@ def render_dashboard_page() -> str:
             background: var(--google-surface-variant);
             border: 1px solid var(--google-border);
             border-radius: 8px;
-            padding: 4px 12px;
+            padding: 5px 12px;
             font-size: 12px;
+            font-weight: 500;
             color: var(--google-text);
             cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+        .project-selector:hover {{
+            background: var(--google-surface-hover);
+            border-color: var(--google-blue);
         }}
         .bar-search {{
             flex: 1;
-            max-width: 500px;
+            max-width: 480px;
             margin: 0 24px;
         }}
         .search-box {{
@@ -1006,9 +1069,15 @@ def render_dashboard_page() -> str:
             background: var(--google-bg);
             border: 1px solid var(--google-border);
             border-radius: 8px;
-            padding: 6px 14px;
+            padding: 7px 14px;
             color: var(--google-text);
             font-size: 13px;
+            font-family: inherit;
+            transition: border-color 0.2s ease;
+        }}
+        .search-box:focus {{
+            outline: none;
+            border-color: var(--google-blue);
         }}
         .bar-right {{
             display: flex;
@@ -1016,32 +1085,36 @@ def render_dashboard_page() -> str:
             gap: 12px;
         }}
         .user-avatar {{
-            width: 28px;
-            height: 28px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
-            background: #1a73e8;
+            background: linear-gradient(135deg, #1a73e8, #4285f4);
             color: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 700;
-            font-size: 12px;
+            font-weight: 600;
+            font-size: 13px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }}
         /* Main Container */
         .container {{
-            max-width: 1280px;
+            max-width: 1320px;
             margin: 0 auto;
-            padding: 24px;
+            padding: 28px 24px;
         }}
         .page-header {{
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
         }}
         .page-title h1 {{
-            font-size: 22px;
-            font-weight: 400;
+            font-size: 24px;
+            font-weight: 500;
+            letter-spacing: -0.3px;
         }}
         .page-title p {{
             font-size: 13px;
@@ -1050,6 +1123,7 @@ def render_dashboard_page() -> str:
         }}
         .action-row {{
             display: flex;
+            align-items: center;
             gap: 10px;
         }}
         .google-btn-primary {{
@@ -1057,14 +1131,21 @@ def render_dashboard_page() -> str:
             color: #040c17;
             border: none;
             border-radius: 8px;
-            padding: 8px 16px;
+            padding: 9px 18px;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
             font-family: 'Google Sans', sans-serif;
             cursor: pointer;
-            transition: background 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }}
-        .google-btn-primary:hover {{ background: #aecbfa; }}
+        .google-btn-primary:hover {{
+            background: #aecbfa;
+            transform: translateY(-1px);
+        }}
         .google-btn-secondary {{
             background: var(--google-surface-variant);
             color: var(--google-text);
@@ -1077,31 +1158,46 @@ def render_dashboard_page() -> str:
             text-decoration: none;
             display: inline-flex;
             align-items: center;
+            gap: 6px;
             cursor: pointer;
+            transition: all 0.2s ease;
         }}
-        .google-btn-secondary:hover {{ background: #323539; }}
+        .google-btn-secondary:hover {{
+            background: var(--google-surface-hover);
+            border-color: rgba(255,255,255,0.2);
+        }}
         .google-btn-danger {{
             background: rgba(242, 139, 130, 0.15);
             color: var(--google-red);
             border: 1px solid rgba(242, 139, 130, 0.3);
             border-radius: 8px;
-            padding: 8px 16px;
+            padding: 9px 16px;
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
+            font-family: 'Google Sans', sans-serif;
             cursor: pointer;
+            transition: all 0.2s ease;
         }}
-        .google-btn-danger:hover {{ background: rgba(242, 139, 130, 0.25); }}
+        .google-btn-danger:hover {{
+            background: rgba(242, 139, 130, 0.25);
+            border-color: var(--google-red);
+        }}
         .google-btn-danger-sm {{
             background: rgba(242, 139, 130, 0.12);
             color: var(--google-red);
             border: 1px solid rgba(242, 139, 130, 0.25);
             border-radius: 6px;
-            padding: 4px 10px;
+            padding: 5px 12px;
             font-size: 12px;
             font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
             cursor: pointer;
+            transition: all 0.15s ease;
         }}
-        .google-btn-danger-sm:hover {{ background: rgba(242, 139, 130, 0.25); }}
+        .google-btn-danger-sm:hover {{
+            background: rgba(242, 139, 130, 0.25);
+            border-color: var(--google-red);
+        }}
         /* Metric Cards */
         .metric-grid {{
             display: grid;
@@ -1114,18 +1210,22 @@ def render_dashboard_page() -> str:
             border: 1px solid var(--google-border);
             border-radius: 12px;
             padding: 20px;
+            transition: border-color 0.2s ease;
+        }}
+        .metric-card:hover {{
+            border-color: rgba(255, 255, 255, 0.2);
         }}
         .metric-title {{
-            font-size: 12px;
-            font-weight: 500;
+            font-size: 11px;
+            font-weight: 600;
             color: var(--google-text-secondary);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.6px;
             margin-bottom: 8px;
         }}
         .metric-val {{
             font-size: 24px;
-            font-weight: 400;
+            font-weight: 500;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -1149,7 +1249,7 @@ def render_dashboard_page() -> str:
         }}
         .card-title {{
             font-size: 15px;
-            font-weight: 500;
+            font-weight: 600;
             margin-bottom: 16px;
             display: flex;
             align-items: center;
@@ -1160,7 +1260,7 @@ def render_dashboard_page() -> str:
             border-collapse: collapse;
         }}
         th, td {{
-            padding: 12px 14px;
+            padding: 13px 16px;
             text-align: left;
             border-bottom: 1px solid var(--google-border);
             font-size: 13px;
@@ -1169,68 +1269,133 @@ def render_dashboard_page() -> str:
             color: var(--google-text-secondary);
             font-size: 11px;
             text-transform: uppercase;
-            font-weight: 500;
-            letter-spacing: 0.5px;
+            font-weight: 600;
+            letter-spacing: 0.6px;
+            background: rgba(255,255,255,0.02);
+        }}
+        tbody tr:hover {{
+            background: rgba(255,255,255,0.02);
         }}
         code {{
             background: var(--google-surface-variant);
-            padding: 2px 6px;
-            border-radius: 4px;
+            padding: 3px 7px;
+            border-radius: 6px;
             font-family: 'Roboto Mono', monospace;
             font-size: 12px;
             color: var(--google-blue);
+            border: 1px solid var(--google-border-subtle);
         }}
         .status-pill {{
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 2px 8px;
+            padding: 3px 10px;
             border-radius: 12px;
             font-size: 11px;
-            font-weight: 500;
+            font-weight: 600;
+            letter-spacing: 0.3px;
         }}
         .status-healthy {{ background: rgba(129, 201, 149, 0.15); color: var(--google-green); }}
         .badge-chip {{
             background: var(--google-surface-variant);
             border: 1px solid var(--google-border);
             border-radius: 12px;
-            padding: 2px 8px;
+            padding: 3px 9px;
             font-size: 11px;
+            font-weight: 500;
+            font-family: 'Roboto Mono', monospace;
         }}
         .avatar-chip {{
-            width: 26px;
-            height: 26px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
-            background: #1a73e8;
-            color: #fff;
+            background: linear-gradient(135deg, #1a73e8, #8ab4f8);
+            color: #040c17;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
             font-size: 12px;
         }}
+        .pulse-dot {{
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--google-green);
+            box-shadow: 0 0 8px var(--google-green);
+            animation: pulse 2s infinite;
+        }}
+        @keyframes pulse {{
+            0% {{ transform: scale(0.95); opacity: 0.8; }}
+            50% {{ transform: scale(1.2); opacity: 1; }}
+            100% {{ transform: scale(0.95); opacity: 0.8; }}
+        }}
         .form-control {{
             width: 100%;
             background: var(--google-bg);
             border: 1px solid var(--google-border);
             border-radius: 8px;
-            padding: 8px 12px;
+            padding: 9px 12px;
             color: var(--google-text);
             font-size: 13px;
+            font-family: inherit;
             margin-bottom: 12px;
+            transition: border-color 0.2s ease;
         }}
         .form-control:focus {{
             outline: none;
             border-color: var(--google-blue);
         }}
+        .copy-btn {{
+            background: transparent;
+            border: 1px solid var(--google-border);
+            color: var(--google-text-secondary);
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+        .copy-btn:hover {{
+            background: var(--google-surface-variant);
+            color: var(--google-text);
+            border-color: var(--google-blue);
+        }}
+        /* Toast Notification */
+        #toast {{
+            visibility: hidden;
+            min-width: 250px;
+            background: #1b3a57;
+            color: #8ab4f8;
+            border: 1px solid var(--google-blue);
+            text-align: center;
+            border-radius: 8px;
+            padding: 12px 20px;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            opacity: 0;
+            transition: opacity 0.3s, visibility 0.3s;
+        }}
+        #toast.show {{
+            visibility: visible;
+            opacity: 1;
+        }}
     </style>
 </head>
 <body>
+    <div id="toast">Copied to clipboard!</div>
+
     <!-- Google Cloud App Bar -->
     <div class="google-app-bar">
         <div class="bar-left">
             <a href="/" class="bar-brand">
-                <svg width="20" height="20" viewBox="0 0 24 24">
+                <svg width="22" height="22" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
@@ -1238,17 +1403,17 @@ def render_dashboard_page() -> str:
                 </svg>
                 <span>Noemt Cloud Console</span>
             </a>
-            <div class="project-selector">
+            <div class="project-selector" title="Active Project">
                 <span>🏢 noemtaddons-prod</span>
                 <small style="color:var(--google-text-secondary);">▾</small>
             </div>
         </div>
         <div class="bar-search">
-            <input type="text" class="search-box" placeholder="Search resources, instances, endpoints (Ctrl+/)">
+            <input type="text" class="search-box" id="searchFilter" onkeyup="filterTable()" placeholder="Search connected instances or endpoints...">
         </div>
         <div class="bar-right">
-            <a href="/logout" class="google-btn-secondary" style="padding:4px 10px; font-size:12px;">Sign Out</a>
-            <div class="user-avatar">N</div>
+            <a href="/logout" class="google-btn-secondary" style="padding:5px 12px; font-size:12px;">Sign Out</a>
+            <div class="user-avatar" title="Logged in as nom">N</div>
         </div>
     </div>
 
@@ -1257,12 +1422,12 @@ def render_dashboard_page() -> str:
         <div class="page-header">
             <div class="page-title">
                 <h1>Mod Telemetry & Instance Management</h1>
-                <p>Project: <b>noemtaddons-prod</b> • Region: <b>global</b> • Operator: <b>nom</b></p>
+                <p>Project: <b>noemtaddons-prod</b> • Region: <b>global</b> • Operator: <b>nom</b> • Mode: <b>Event-Driven CI/CD</b></p>
             </div>
             <div class="action-row">
                 <form method="POST" action="/api/action" style="display:inline;">
                     <input type="hidden" name="action" value="build">
-                    <button type="submit" class="google-btn-primary">🔨 Trigger Cloud Build</button>
+                    <button type="submit" class="google-btn-primary">⚡ Instant Pull & Build</button>
                 </form>
                 <a href="/changelog" class="google-btn-secondary" target="_blank">📜 View Changelog</a>
             </div>
@@ -1274,7 +1439,7 @@ def render_dashboard_page() -> str:
                 <div class="metric-title">Active Client Instances</div>
                 <div class="metric-val">
                     <span>{connected_count}</span>
-                    <span class="status-pill status-healthy">● {connected_count} online</span>
+                    <span class="status-pill status-healthy"><span class="pulse-dot"></span> {connected_count} online</span>
                 </div>
             </div>
             <div class="metric-card">
@@ -1286,13 +1451,13 @@ def render_dashboard_page() -> str:
             </div>
             <div class="metric-card">
                 <div class="metric-title">Build Pipeline Status</div>
-                <div class="metric-val" style="color: {'var(--google-green)' if LAST_BUILD_STATUS == 'Healthy' else 'var(--google-red)'};">
+                <div class="metric-val" style="color: {'var(--google-green)' if LAST_BUILD_STATUS == 'Healthy' else 'var(--google-red)'}; font-size:20px;">
                     {LAST_BUILD_STATUS}
                 </div>
             </div>
             <div class="metric-card">
                 <div class="metric-title">Last Automated Deployment</div>
-                <div class="metric-val" style="font-size: 15px; font-family:'Roboto Mono',monospace;">
+                <div class="metric-val" style="font-size: 14px; font-family:'Roboto Mono',monospace;">
                     {LAST_BUILD_TIME}
                 </div>
             </div>
@@ -1305,9 +1470,9 @@ def render_dashboard_page() -> str:
                 <div class="card">
                     <div class="card-title">
                         <span>👥 Connected Client Instances ({len(clients)})</span>
-                        <small style="color:var(--google-text-secondary);">Real-Time WebSocket Link</small>
+                        <small style="color:var(--google-text-secondary); font-weight:normal;">Real-Time WebSocket Link</small>
                     </div>
-                    <table>
+                    <table id="instancesTable">
                         <thead>
                             <tr>
                                 <th>Client Instance</th>
@@ -1327,52 +1492,73 @@ def render_dashboard_page() -> str:
                 <!-- Mod Loader Distribution Card -->
                 <div class="card">
                     <div class="card-title">
-                        <span>📦 Distributed Builds & Endpoints</span>
+                        <span>📦 Distributed Builds & Dynamic Endpoints</span>
+                        <small style="color:var(--google-text-secondary); font-weight:normal;">Smart HTTP 304 Cache</small>
                     </div>
                     <table>
                         <thead>
                             <tr>
                                 <th>Build Flavor</th>
-                                <th>Endpoint URL</th>
-                                <th>Payload Size</th>
-                                <th>SHA-256 Checksum</th>
-                                <th>Download</th>
+                                <th>Payload Endpoint</th>
+                                <th>Size</th>
+                                <th>Checksum</th>
+                                <th>Bootstrap Loader</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
                                 <td><span class="status-pill status-healthy">LEGIT</span></td>
-                                <td><code>/loaders/noemtaddons-legit.jar</code></td>
+                                <td>
+                                    <code>/loaders/noemtaddons-legit.jar</code>
+                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons-legit.jar')">Copy</button>
+                                </td>
                                 <td>{meta['endpoints']['legit']['size'] / 1024:.1f} KB</td>
-                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['legit']['sha256'][:16]}...</small></td>
-                                <td><a href="/download/loaders/legit" class="google-btn-secondary" style="padding:4px 8px; font-size:11px;">Loader JAR</a></td>
+                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['legit']['sha256'][:14]}...</small></td>
+                                <td><a href="/download/loaders/legit" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
                             </tr>
                             <tr>
                                 <td><span class="status-pill" style="background:rgba(242,139,130,0.15); color:var(--google-red);">CHEAT</span></td>
-                                <td><code>/loaders/noemtaddons-cheat.jar</code></td>
+                                <td>
+                                    <code>/loaders/noemtaddons-cheat.jar</code>
+                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons-cheat.jar')">Copy</button>
+                                </td>
                                 <td>{meta['endpoints']['cheat']['size'] / 1024:.1f} KB</td>
-                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['cheat']['sha256'][:16]}...</small></td>
-                                <td><a href="/download/loaders/cheat" class="google-btn-secondary" style="padding:4px 8px; font-size:11px;">Loader JAR</a></td>
+                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['cheat']['sha256'][:14]}...</small></td>
+                                <td><a href="/download/loaders/cheat" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Instant Webhook Guide Card -->
+                <div class="card">
+                    <div class="card-title">
+                        <span>⚡ Instant GitHub CI/CD Webhook</span>
+                    </div>
+                    <p style="font-size:12px; color:var(--google-text-secondary); line-height:1.6; margin-bottom:12px;">
+                        Add this URL to your GitHub Repository Settings (<b>Webhooks → Add webhook</b>). The server will instantly pull and build on every push.
+                    </p>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <input type="text" class="form-control" style="margin-bottom:0;" value="https://addons.noemt.dev/api/webhook" readonly id="webhookInput">
+                        <button class="google-btn-secondary" onclick="copyText(document.getElementById('webhookInput').value)">Copy URL</button>
+                    </div>
+                </div>
             </div>
 
-            <!-- Right Column: Emergency Failsafe & Control -->
+            <!-- Right Column: Emergency Failsafe & Remote Control -->
             <div>
                 <!-- Emergency Client Shutdown Card -->
-                <div class="card" style="border-color: rgba(242, 139, 130, 0.4);">
+                <div class="card" style="border-color: rgba(242, 139, 130, 0.4); background: linear-gradient(180deg, rgba(242,139,130,0.04), var(--google-surface));">
                     <div class="card-title" style="color: var(--google-red);">
                         <span>🛑 Remote Client Failsafe</span>
                     </div>
-                    <p style="font-size:12px; color:var(--google-text-secondary); margin-bottom:14px;">
-                        Remotely closes Minecraft instances cleanly as a security failsafe.
+                    <p style="font-size:12px; color:var(--google-text-secondary); margin-bottom:14px; line-height:1.5;">
+                        Emergency kill switch that closes Minecraft cleanly when away from computer.
                     </p>
                     <form method="POST" action="/api/action" onsubmit="return confirm('Trigger emergency shutdown for selected target?');">
                         <input type="hidden" name="action" value="kill">
-                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">TARGET CLIENT</label>
-                        <input type="text" name="target" class="form-control" value="all" placeholder="Player name or 'all'" required>
+                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">TARGET CLIENT</label>
+                        <input type="text" name="target" class="form-control" value="all" placeholder="Player IGN or 'all'" required>
                         <button type="submit" class="google-btn-danger" style="width:100%;">⚡ Close Target Client(s)</button>
                     </form>
                 </div>
@@ -1383,18 +1569,18 @@ def render_dashboard_page() -> str:
                         <span>🎮 Remote Instance Dispatch</span>
                     </div>
                     <form method="POST" action="/api/action">
-                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">ACTION</label>
+                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">ACTION</label>
                         <select name="action" class="form-control">
                             <option value="msg">💬 Chat Message</option>
-                            <option value="title">🔔 Screen Title</option>
+                            <option value="title">🔔 Screen Title Alert</option>
                             <option value="chat">⚡ Execute In-Game Command</option>
                         </select>
 
-                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">TARGET</label>
-                        <input type="text" name="target" class="form-control" value="all" placeholder="Player name or 'all'">
+                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">TARGET</label>
+                        <input type="text" name="target" class="form-control" value="all" placeholder="Player IGN or 'all'">
 
-                        <label style="font-size:11px; color:var(--google-text-secondary); display:block; margin-bottom:4px;">PAYLOAD TEXT</label>
-                        <input type="text" name="text" class="form-control" placeholder="Text or command" required>
+                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">PAYLOAD TEXT</label>
+                        <input type="text" name="text" class="form-control" placeholder="Message or $command" required>
 
                         <button type="submit" class="google-btn-primary" style="width:100%;">Dispatch to Client →</button>
                     </form>
@@ -1405,7 +1591,7 @@ def render_dashboard_page() -> str:
                     <div class="card-title">
                         <span>🌿 Git Deployment Info</span>
                     </div>
-                    <div style="font-size:12px; line-height:1.6; color:var(--google-text-secondary);">
+                    <div style="font-size:12px; line-height:1.7; color:var(--google-text-secondary);">
                         <p><b>Commit:</b> <code>{short_hash}</code> ({author})</p>
                         <p style="margin-top:4px;"><b>Message:</b> <span style="color:var(--google-text);">{msg}</span></p>
                         <p style="margin-top:4px;"><b>Branch:</b> <code>origin/{GIT_BRANCH}</code></p>
@@ -1414,6 +1600,30 @@ def render_dashboard_page() -> str:
             </div>
         </div>
     </div>
+
+    <script>
+        function copyText(text) {{
+            navigator.clipboard.writeText(text).then(function() {{
+                var toast = document.getElementById("toast");
+                toast.className = "show";
+                setTimeout(function(){{ toast.className = toast.className.replace("show", ""); }}, 2500);
+            }});
+        }}
+
+        function filterTable() {{
+            var input = document.getElementById("searchFilter");
+            var filter = input.value.toUpperCase();
+            var table = document.getElementById("instancesTable");
+            var tr = table.getElementsByTagName("tr");
+            for (var i = 1; i < tr.length; i++) {{
+                var td = tr[i].getElementsByTagName("td")[0];
+                if (td) {{
+                    var txtValue = td.textContent || td.innerText;
+                    tr[i].style.display = txtValue.toUpperCase().indexOf(filter) > -1 ? "" : "none";
+                }}
+            }}
+        }}
+    </script>
 </body>
 </html>"""
 
@@ -1703,7 +1913,6 @@ async def main():
     async with server:
         await asyncio.gather(
             server.serve_forever(),
-            git_polling_loop(),
             interactive_console()
         )
 
