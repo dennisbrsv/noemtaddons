@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "noemtaddons",
+	"version": "1.0.0",
+	"name": "NoemtAddons Loader",
+	"description": "Dynamic mod loader for NoemtAddons",
+	"authors": [
+		"Noemt"
+	],
+	"contact": {
+		"homepage": "https://addons.noemt.dev"
+	},
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"dev.noemt.loader.NoemtLoader"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": "~26.1.2",
+		"fabric-language-kotlin": "*"
+	}
+}
