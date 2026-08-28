@@ -33,13 +33,13 @@ open class NoemtaddonsConfig : Config() {
     var remote: RemoteCategory = RemoteCategory()
 
     @Expose
-    @Category(name = "Loadout Swapper [CHEAT]", desc = "Conditional auto loadout swapper (Run \$loadout gui for visual builder)")
+    @Category(name = "Loadout Swapper", desc = "Conditional auto loadout swapper (Run \$noemt loadout for visual builder)")
     @JvmField
     var loadout: LoadoutCategory = LoadoutCategory()
 
     class LoadoutCategory {
         @Expose
-        @ConfigOption(name = "Enable Loadout Swapper [CHEAT]", desc = "Master toggle for conditional and keybind loadout swapping (Run \$loadout gui).")
+        @ConfigOption(name = "Enable Loadout Swapper", desc = "Master toggle for conditional and keybind loadout swapping (Run \$loadout gui).")
         @ConfigEditorBoolean
         @JvmField
         var enabled: Boolean = true
@@ -115,7 +115,7 @@ open class NoemtaddonsConfig : Config() {
         var mapEnabled: Boolean = true
 
         @Expose
-        @ConfigOption(name = "Cheater Map [CHEAT]", desc = "Reveals undiscovered rooms and full dungeon layout ahead of time (Cheat build only).")
+        @ConfigOption(name = "Cheater Map", desc = "Reveals undiscovered rooms and full dungeon layout ahead of time (Cheat build only).")
         @ConfigEditorBoolean
         @JvmField
         var dungeonMapCheater: Boolean = true

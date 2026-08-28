@@ -25,17 +25,13 @@ object LoadoutModule : Module {
     // Keybindings (Registered into Minecraft KeyMapping registry)
     val keyToggleAB = KeyMapping("key.noemtaddons.loadout_toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, KeyMapping.Category.MISC)
     val keySwapPrevious = KeyMapping("key.noemtaddons.loadout_previous", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_B, KeyMapping.Category.MISC)
-    val keyLoadout1 = KeyMapping("key.noemtaddons.loadout_1", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
-    val keyLoadout2 = KeyMapping("key.noemtaddons.loadout_2", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
-    val keyLoadout3 = KeyMapping("key.noemtaddons.loadout_3", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
-    val keyLoadout4 = KeyMapping("key.noemtaddons.loadout_4", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
     val keyCopyItemData = KeyMapping("key.noemtaddons.copy_item_data", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F4, KeyMapping.Category.MISC)
 
     override fun init() {
         LoadoutManager.init()
 
         // Register keybindings into Fabric
-        for (km in listOf(keyToggleAB, keySwapPrevious, keyLoadout1, keyLoadout2, keyLoadout3, keyLoadout4, keyCopyItemData)) {
+        for (km in listOf(keyToggleAB, keySwapPrevious, keyCopyItemData)) {
             net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper.registerKeyMapping(km)
         }
 
@@ -116,18 +112,6 @@ object LoadoutModule : Module {
             }
             while (keySwapPrevious.consumeClick()) {
                 LoadoutManager.swapToPrevious()
-            }
-            while (keyLoadout1.consumeClick()) {
-                LoadoutManager.swapTo("loadout_1", "Direct Keybind (1)")
-            }
-            while (keyLoadout2.consumeClick()) {
-                LoadoutManager.swapTo("loadout_2", "Direct Keybind (2)")
-            }
-            while (keyLoadout3.consumeClick()) {
-                LoadoutManager.swapTo("loadout_3", "Direct Keybind (3)")
-            }
-            while (keyLoadout4.consumeClick()) {
-                LoadoutManager.swapTo("loadout_4", "Direct Keybind (4)")
             }
             while (keyCopyItemData.consumeClick()) {
                 dev.noemt.client.utils.DebugUtils.dumpHoveredOrHeldItem()

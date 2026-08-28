@@ -224,6 +224,9 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
     }
 
     private fun getLoadoutItem(lo: Loadout, defaultSlotNum: Int): Item {
+        if (!lo.skullTexture.isNullOrBlank() || lo.itemType?.contains("player_head", ignoreCase = true) == true) {
+            return Items.PLAYER_HEAD
+        }
         if (!lo.itemType.isNullOrBlank()) {
             val id = Identifier.tryParse(lo.itemType!!)
             if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
@@ -264,7 +267,7 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
         // Set Skull Profile / Texture if available
         if (!lo.skullTexture.isNullOrBlank()) {
             try {
-                val profile = GameProfile(UUID.randomUUID(), "")
+                val profile = GameProfile(UUID.randomUUID(), "Skull")
                 profile.properties.put("textures", Property("textures", lo.skullTexture!!))
                 stack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile))
             } catch (e: Exception) {}

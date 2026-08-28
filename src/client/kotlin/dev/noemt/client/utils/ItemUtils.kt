@@ -24,8 +24,35 @@ object ItemUtils {
 
     fun getSkullTexture(stack: ItemStack): String? {
         if (stack.isEmpty) return null
-        val profile = stack.get(DataComponents.PROFILE) ?: return null
-        val properties = profile.partialProfile().properties
-        return properties["textures"].firstOrNull()?.value
+
+        // 1. Try DataComponents.PROFILE
+        val profile = stack.get(DataComponents.PROFILE)
+        if (profile != null) {
+            val textures = profile.partialProfile().properties.get("textures")
+            val value = textures.firstOrNull()?.value
+            if (!value.isNullOrBlank()) return value
+        }
+
+        // 2. Try CustomData / SkullOwner NBT tag (Hypixel legacy & container format)
+        val customData = stack.customData
+        if (customData.contains("SkullOwner")) {
+            val skullOwner = customData.getCompoundOrEmpty("SkullOwner")
+            val props = skullOwner.getCompoundOrEmpty("Properties")
+            val texturesList = props.getListOrEmpty("textures")
+            if (!texturesList.isEmpty()) {
+                val firstTag = texturesList.getCompoundOrEmpty(0)
+                val value = firstTag.getStringOr("Value", "")
+                if (value.isNotBlank()) return value
+            }
+        }
+
+        // 3. Check for base64 texture in ExtraAttributes or custom_data directly
+        val extra = customData.getCompoundOrEmpty("ExtraAttributes")
+        if (extra.contains("texture")) {
+            val tex = extra.getStringOr("texture", "")
+            if (tex.isNotBlank()) return tex
+        }
+
+        return null
     }
 }
