@@ -20,7 +20,10 @@ import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.entity.TamableAnimal
+import net.minecraft.world.entity.ambient.Bat
 import net.minecraft.world.entity.animal.sheep.Sheep
+import net.minecraft.world.entity.boss.wither.WitherBoss
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.item.PrimedTnt
 import net.minecraft.world.entity.monster.zombie.Zombie
@@ -55,6 +58,10 @@ object AutoBloodCamp : Module {
     private var savedWeaponSlot: Int? = null
     private var kp6WasDown = false
     private var kp7WasDown = false
+
+    private var anchorPos: Vec3? = null
+    private var strafeCycleTicks = 0
+    private var currentStrafeDir = 0
 
     private val recordedSpawnLocations = mutableListOf<Vec3>()
     private val recordedBoxPositions = mutableListOf<Vec3>()
@@ -214,6 +221,7 @@ object AutoBloodCamp : Module {
 
             val roomCenterPos = getBloodRoomCenter() ?: player.blockPosition()
             val roomCenterFloor = Vec3(roomCenterPos.x + 0.5, 69.5, roomCenterPos.z + 0.5)
+            val currentAnchor = anchorPos ?: player.position().also { anchorPos = it }
 
             fun isWatcher(entity: LivingEntity): Boolean {
                 if (entity == BloodCamp.watcherEntity) return true
@@ -248,38 +256,50 @@ object AutoBloodCamp : Module {
                     }
                     val now = System.currentTimeMillis()
 
-                    val safePos = PathfindingUtils.findAotvSafePositionFromTnts(tntPositions, 5.0)
-                    val walkPos = PathfindingUtils.findSafePositionFromTnts(tntPositions, 5.0)
+                    val safeWalkPos = PathfindingUtils.findSafePositionFromTnts(tntPositions, 5.0)
+                    val safeAotvPos = PathfindingUtils.findAotvSafePositionFromTnts(tntPositions, 5.0)
 
-                    val walkDist = walkPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
-                    val shouldUseAotv = config.autoBloodAotv && AOTVHelper.hasAotv() && (minTntDist < 2.5 || walkDist > 4.5) && (now - lastAotvTime > 350)
+                    val walkDist = safeWalkPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
 
-                    if (shouldUseAotv && safePos != null) {
-                        val targetPoint = Vec3(safePos.x + 0.5, safePos.y + 0.95, safePos.z + 0.5)
-                        MouseRotationHelper.setTarget(targetPoint, config.autoBloodAimSpeed)
+                    // Pace evasion calmly: TNT fuse gives plenty of time.
+                    // Smoothly walk away first. Only Etherwarp if trapped close (< 1.8m) or safe spot is far (> 6.5m)
+                    // with a steady 1400ms cooldown.
+                    val shouldUseEtherwarp = config.autoBloodAotv &&
+                            AOTVHelper.hasAotv() &&
+                            (minTntDist < 1.8 || walkDist > 6.5) &&
+                            (now - lastAotvTime > 1400L) &&
+                            safeAotvPos != null
 
-                        if (MouseRotationHelper.isAimingAt(targetPoint, 5.5f) || (now - lastAotvTime > 650)) {
+                    if (shouldUseEtherwarp && safeAotvPos != null) {
+                        // Target the solid floor block top (never into the air) for Etherwarp
+                        val targetBlockTop = Vec3(safeAotvPos.x + 0.5, safeAotvPos.y + 1.0, safeAotvPos.z + 0.5)
+                        MouseRotationHelper.setTarget(targetBlockTop, config.autoBloodAimSpeed)
+
+                        // Walk smoothly in the direction while aiming
+                        PathfindingUtils.moveTo(targetBlockTop, sprint = true)
+                        isEvadingTnt = true
+
+                        // Only cast Etherwarp once the crosshair is securely locked on the floor block
+                        if (MouseRotationHelper.isAimingAt(targetBlockTop, 4.5f)) {
                             lastAotvTime = now
-                            teleportPauseTicks = 10
+                            teleportPauseTicks = 8
                             AOTVHelper.castTeleport(preferredSlot)
                         }
-                        return@register
-                    }
-
-                    // Otherwise walk smoothly away to safety
-                    if (walkPos != null) {
-                        val safeVec = Vec3(walkPos.x + 0.5, walkPos.y + 1.0, walkPos.z + 0.5)
+                    } else if (safeWalkPos != null) {
+                        // Smoothly walk to safe spot not blocked by pillars
+                        val safeVec = Vec3(safeWalkPos.x + 0.5, safeWalkPos.y + 1.0, safeWalkPos.z + 0.5)
                         PathfindingUtils.moveTo(safeVec, sprint = true)
                         isEvadingTnt = true
                     }
                 }
             }
 
-            if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
+            if (!isEvadingTnt && PathfindingUtils.isControllingMovement && !config.autoBloodHumanMovement) {
                 PathfindingUtils.stopMovement()
             }
 
             // 4. Find all living mobs strictly inside the blood room
+            // Exclude WitherBoss (player Wither pet circling), invisible entities, tamed pets, golems, and bats
             val maxRange = config.autoBloodAttackRange.toDouble().coerceIn(5.0, 30.0)
             val livingMobs = entities.filterIsInstance<LivingEntity>().filter { entity ->
                 if (entity == player) return@filter false
@@ -287,6 +307,16 @@ object AutoBloodCamp : Module {
                 if (entity is Sheep) return@filter false
                 if (entity is Player && isDungeonTeammate(entity)) return@filter false
                 if (isWatcher(entity)) return@filter false
+                if (entity is WitherBoss || entity.type == EntityType.WITHER) return@filter false
+                if (entity.isInvisible) return@filter false
+                if (entity is Bat || entity.type == EntityType.BAT) return@filter false
+                if (entity.type == EntityType.IRON_GOLEM || entity.type == EntityType.SNOW_GOLEM) return@filter false
+                if (entity is TamableAnimal && entity.isTame) return@filter false
+                val name = entity.customName?.string?.removeFormatting() ?: (entity as? Player)?.gameProfile?.name ?: ""
+                if (name.contains("Blessing", ignoreCase = true) ||
+                    name.contains("Decoy", ignoreCase = true) ||
+                    name.contains("Wither", ignoreCase = true) ||
+                    name.contains("Pet", ignoreCase = true)) return@filter false
                 if (!entity.isAlive || entity.isRemoved) return@filter false
                 if (entity.health <= 0f) return@filter false
                 if (player.distanceTo(entity) > maxRange) return@filter false
@@ -315,7 +345,9 @@ object AutoBloodCamp : Module {
                 val hasLos = player.hasLineOfSight(targetEntity) || PathfindingUtils.hasLineOfSight(player.eyePosition, targetVec)
 
                 if (dist <= maxRange && hasLos) {
-                    if (!isEvadingTnt) PathfindingUtils.stopMovement()
+                    if (!isEvadingTnt) {
+                        performCombatMovement(currentAnchor, isAttacking = true)
+                    }
                     MouseRotationHelper.setTarget(targetVec, config.autoBloodAimSpeed)
 
                     if (MouseRotationHelper.isAimingAt(targetVec, 8.0f) || dist < 4.5) {
@@ -416,7 +448,7 @@ object AutoBloodCamp : Module {
                     }
                 } else {
                     if (!isEvadingTnt) {
-                        PathfindingUtils.stopMovement()
+                        performCombatMovement(currentAnchor, isAttacking = false)
                     }
                     MouseRotationHelper.setTarget(boxTargetVec, config.autoBloodAimSpeed)
                 }
@@ -438,10 +470,42 @@ object AutoBloodCamp : Module {
             }
 
             if (!isEvadingTnt) {
-                PathfindingUtils.stopMovement()
+                performCombatMovement(currentAnchor, isAttacking = false)
             }
             MouseRotationHelper.setTarget(restingTarget, config.autoBloodAimSpeed)
         }
+    }
+
+    private fun performCombatMovement(anchor: Vec3, isAttacking: Boolean) {
+        val player = mc.player ?: return
+        val config = ConfigManager.config.blood
+        if (!config.autoBloodHumanMovement) {
+            PathfindingUtils.stopMovement()
+            return
+        }
+
+        // Leash to anchor position (prevent drifting into pillars or doorway)
+        val distToAnchor = hypot(player.x - anchor.x, player.z - anchor.z)
+        if (distToAnchor > 2.2) {
+            PathfindingUtils.moveTo(anchor, sprint = false)
+            return
+        }
+
+        strafeCycleTicks--
+        if (strafeCycleTicks <= 0) {
+            strafeCycleTicks = if (isAttacking) (5 + (Math.random() * 8).toInt()) else (12 + (Math.random() * 18).toInt())
+            currentStrafeDir = when ((Math.random() * 3).toInt()) {
+                0 -> -1
+                1 -> 1
+                else -> 0
+            }
+        }
+
+        if (player.horizontalCollision) {
+            currentStrafeDir = -currentStrafeDir
+        }
+
+        PathfindingUtils.setStrafeInput(currentStrafeDir)
     }
 
     private fun isDisablerMessage(text: String): Boolean {
@@ -480,6 +544,9 @@ object AutoBloodCamp : Module {
         tntReactionDelayTicks = 0
         lastAotvTime = 0L
         savedWeaponSlot = null
+        anchorPos = null
+        strafeCycleTicks = 0
+        currentStrafeDir = 0
         recordedSpawnLocations.clear()
         recordedBoxPositions.clear()
         PathfindingUtils.stopMovement()

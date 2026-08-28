@@ -55,11 +55,11 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
             { LoadoutCondition.MinibossCondition(autoRevertOnKill = true) }
         ),
         BLOOD_MOBS(
-            "Blood Room Mobs & Watcher",
+            "Blood Room (Entry & Watcher)",
             Items.REDSTONE_BLOCK,
-            "Auto-swap when aiming at Blood Room mobs or The Watcher.",
+            "Auto-swap loadout upon entering the Blood Room or aiming at Watcher.",
             "rule_blood",
-            { LoadoutCondition.AimCondition(MobCategory.BLOOD_MOB) }
+            { LoadoutCondition.BloodRoomCondition() }
         ),
         KUUDRA(
             "Kuudra Arena",
@@ -605,6 +605,7 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
                         if (rule != null) {
                             rule.enabled = !rule.enabled
                             LoadoutManager.saveData()
+                            LoadoutManager.notifyDataChanged()
                             return true
                         }
                     }
@@ -622,14 +623,20 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
                     }
                     45 -> {
                         config.enabled = !config.enabled
+                        ConfigManager.save()
+                        LoadoutManager.notifyDataChanged()
                         return true
                     }
                     46 -> {
                         config.showHud = !config.showHud
+                        ConfigManager.save()
+                        LoadoutManager.notifyDataChanged()
                         return true
                     }
                     47 -> {
                         config.playSound = !config.playSound
+                        ConfigManager.save()
+                        LoadoutManager.notifyDataChanged()
                         return true
                     }
                     48 -> {
@@ -657,7 +664,10 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
                         return true
                     }
 
-                    // Left Click: Assign loadout to target
+                    // Left Click: Assign loadout to target and ensure swapper is enabled
+                    ConfigManager.config.loadout.enabled = true
+                    ConfigManager.save()
+
                     when (target) {
                         ConfigTarget.TOGGLE_A -> {
                             LoadoutManager.loadoutAId = targetLoadoutId
@@ -679,6 +689,7 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
                     }
 
                     LoadoutManager.saveData()
+                    LoadoutManager.notifyDataChanged()
                     currentView = MenuView.MAIN_CONFIG
                     return true
                 }
@@ -691,6 +702,7 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
                         else -> LoadoutManager.removeRule(target.defaultRuleId)
                     }
                     LoadoutManager.saveData()
+                    LoadoutManager.notifyDataChanged()
                     currentView = MenuView.MAIN_CONFIG
                     return true
                 }

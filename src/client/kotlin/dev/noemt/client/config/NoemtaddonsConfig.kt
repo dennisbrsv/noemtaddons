@@ -429,6 +429,12 @@ open class NoemtaddonsConfig : Config() {
         var autoBloodAimSpeed: Float = 0.9f
 
         @Expose
+        @ConfigOption(name = "Human Combat Movement", desc = "Adds natural micro-strafing, jiggling, and positioning footwork while camping.")
+        @ConfigEditorBoolean
+        @JvmField
+        var autoBloodHumanMovement: Boolean = true
+
+        @Expose
         @ConfigOption(name = "Attack CPS", desc = "Clicks per second when attacking blood mobs.")
         @ConfigEditorSlider(minValue = 1f, maxValue = 20f, minStep = 1f)
         @JvmField

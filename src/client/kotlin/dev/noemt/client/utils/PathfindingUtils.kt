@@ -69,6 +69,16 @@ object PathfindingUtils {
         return !state.isAir && !state.getCollisionShape(level, checkPos).isEmpty
     }
 
+    fun setStrafeInput(dir: Int) {
+        isControllingMovement = (dir != 0)
+        mc.options.keyLeft.isDown = (dir == -1)
+        mc.options.keyRight.isDown = (dir == 1)
+        mc.options.keyUp.isDown = false
+        mc.options.keyDown.isDown = false
+        mc.options.keySprint.isDown = false
+        mc.options.keyJump.isDown = false
+    }
+
     fun stopMovement() {
         if (!isControllingMovement) return
         isControllingMovement = false
@@ -139,16 +149,26 @@ object PathfindingUtils {
         val candidates = getBloodRoomFloorPositions()
         if (candidates.isEmpty()) return null
 
-        val completelySafe = candidates.filter { minDistanceToTnts(it, tntPositions) >= minDistance }
-        if (completelySafe.isNotEmpty()) {
-            return completelySafe.minByOrNull { pos ->
+        val roomCenter = dev.noemt.client.features.blood.AutoBloodCamp.getBloodRoomCenter()?.let {
+            Vec3(it.x + 0.5, 69.5, it.z + 0.5)
+        }
+
+        // Candidates must be >= 5 blocks from TNT and not blocked behind pillars
+        val safeCandidates = candidates.filter { pos ->
+            minDistanceToTnts(pos, tntPositions) >= minDistance &&
+            (roomCenter == null || hasCenterLineOfSight(pos, roomCenter))
+        }
+
+        if (safeCandidates.isNotEmpty()) {
+            return safeCandidates.minByOrNull { pos ->
                 val center = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
                 player.position().distanceToSqr(center)
             }
         }
 
-        // If no candidate satisfies full minDistance, pick the candidate that maximizes distance to closest TNT
-        return candidates.maxByOrNull { minDistanceToTnts(it, tntPositions) }
+        // Fallback: Maximize TNT distance among spots not blocked by pillars
+        val nonBlocked = candidates.filter { roomCenter == null || hasCenterLineOfSight(it, roomCenter) }
+        return (if (nonBlocked.isNotEmpty()) nonBlocked else candidates).maxByOrNull { minDistanceToTnts(it, tntPositions) }
     }
 
     fun findAotvSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 5.0): BlockPos? {
@@ -157,13 +177,19 @@ object PathfindingUtils {
         val candidates = getBloodRoomFloorPositions()
         if (candidates.isEmpty()) return null
 
+        val roomCenter = dev.noemt.client.features.blood.AutoBloodCamp.getBloodRoomCenter()?.let {
+            Vec3(it.x + 0.5, 69.5, it.z + 0.5)
+        }
+
+        // Must be a solid floor block top (never airborne), line-of-sight for Etherwarp, and clear of pillars
         val safeCandidates = candidates.filter { pos ->
             val targetTop = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
             val dist = eyePos.distanceTo(targetTop)
 
-            dist in 3.5..13.0 &&
+            dist in 4.0..14.0 &&
             minDistanceToTnts(pos, tntPositions) >= minDistance &&
-            hasLineOfSight(eyePos, targetTop)
+            hasLineOfSight(eyePos, targetTop) &&
+            (roomCenter == null || hasCenterLineOfSight(pos, roomCenter))
         }
 
         if (safeCandidates.isNotEmpty()) {
@@ -173,7 +199,9 @@ object PathfindingUtils {
         return candidates.filter { pos ->
             val targetTop = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
             val dist = eyePos.distanceTo(targetTop)
-            dist in 3.5..13.0 && hasLineOfSight(eyePos, targetTop)
+            dist in 4.0..14.0 &&
+            hasLineOfSight(eyePos, targetTop) &&
+            (roomCenter == null || hasCenterLineOfSight(pos, roomCenter))
         }.maxByOrNull { minDistanceToTnts(it, tntPositions) }
     }
 

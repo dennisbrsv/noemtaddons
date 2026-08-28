@@ -25,6 +25,7 @@ object MouseRotationHelper {
     private var curveBiasPitch = 0.0
     private var lastTargetYaw = 0f
     private var lastTargetPitch = 0f
+    private var flickMultiplier = 1.0f
 
     fun normalizeYaw(value: Float): Float = Mth.wrapDegrees(value)
     fun normalizePitch(value: Float): Float = value.coerceIn(-90f, 90f)
@@ -39,14 +40,26 @@ object MouseRotationHelper {
 
     fun setTarget(target: Vec3, speed: Float = 1.0f) {
         val player = mc.player
-        if (targetVec == null && player != null) {
+        val prev = targetVec
+        val isNewTarget = prev == null || prev.distanceToSqr(target) > 0.8
+
+        if (player != null && isNewTarget) {
             val (tYaw, tPitch) = calcYawPitch(player.eyePosition, target)
             val dYaw = normalizeYaw(tYaw - player.yRot)
             val dPitch = normalizePitch(tPitch - player.xRot)
-            // Generate a subtle human wrist pivot curve (slight arc rather than laser-straight line)
-            val perp = if (abs(dYaw) > 5f) (if (dYaw > 0) 1.0 else -1.0) * (0.8 + Math.random() * 0.6) else 0.0
-            curveBiasYaw = -dPitch * 0.04 * perp
-            curveBiasPitch = dYaw * 0.03 * perp
+            val totalDist = sqrt(dYaw * dYaw + dPitch * dPitch)
+
+            // Dynamic human flick speed variance: faster for large turns, snappy for medium
+            flickMultiplier = when {
+                totalDist > 110f -> (1.15 + Math.random() * 0.35).toFloat() // Fast 180° swipe
+                totalDist > 20f -> (0.95 + Math.random() * 0.45).toFloat()
+                else -> (0.95 + Math.random() * 0.20).toFloat()
+            }
+
+            // Generate subtle human wrist arc
+            val perp = if (abs(dYaw) > 5f) (if (dYaw > 0) 1.0 else -1.0) * (0.6 + Math.random() * 0.5) else 0.0
+            curveBiasYaw = -dPitch * 0.035 * perp
+            curveBiasPitch = dYaw * 0.025 * perp
         }
         targetVec = target
         speedMultiplier = speed.coerceIn(0.2f, 2.5f)
@@ -58,6 +71,7 @@ object MouseRotationHelper {
         currentVelPitch = 0.0
         curveBiasYaw = 0.0
         curveBiasPitch = 0.0
+        flickMultiplier = 1.0f
     }
 
     fun hasTarget(): Boolean = targetVec != null
@@ -108,23 +122,25 @@ object MouseRotationHelper {
         val curvedPitchDiff = rawPitchDiff + (curveBiasPitch * arcFactor)
         val curvedDist = sqrt(curvedYawDiff * curvedYawDiff + curvedPitchDiff * curvedPitchDiff).coerceAtLeast(0.01)
 
-        // Smooth and slower human speed profile
+        // Quick 180° turns: swift mousepad swipe across large angles, smooth deceleration on arrival
+        val effectiveSpeed = speedMultiplier * flickMultiplier
         val baseMaxSpeed = when {
-            totalDist > 90.0 -> 130.0 * speedMultiplier
-            totalDist > 30.0 -> 160.0 * speedMultiplier
-            else -> 120.0 * speedMultiplier
+            totalDist > 120.0 -> 520.0 * effectiveSpeed // Quick 180° snap
+            totalDist > 65.0 -> 380.0 * effectiveSpeed  // Fast turn
+            totalDist > 18.0 -> 270.0 * effectiveSpeed  // Crisp flick
+            else -> 160.0 * speedMultiplier            // Landing phase
         }
 
         // Smooth S-curve deceleration (Fitts's Law correction phase)
         val speedFactor = when {
-            totalDist > 35.0 -> 1.0
+            totalDist > 45.0 -> 1.0
             totalDist > 8.0 -> {
-                val t = (totalDist - 8.0) / 27.0
-                0.25 + 0.75 * (t * t * (3.0 - 2.0 * t))
+                val t = (totalDist - 8.0) / 37.0
+                0.28 + 0.72 * (t * t * (3.0 - 2.0 * t))
             }
             else -> {
                 val t = (totalDist / 8.0).coerceIn(0.05, 1.0)
-                0.05 + 0.20 * (t.pow(1.15))
+                0.08 + 0.22 * (t.pow(1.15))
             }
         }
 
@@ -136,10 +152,15 @@ object MouseRotationHelper {
         val desiredVelYaw = dirYaw * targetSpeed
         val desiredVelPitch = dirPitch * targetSpeed
 
-        // Human neuromuscular response damping (spring-damper acceleration)
-        val accel = 8.5 * dt
-        currentVelYaw += (desiredVelYaw - currentVelYaw) * accel.coerceIn(0.05, 0.85)
-        currentVelPitch += (desiredVelPitch - currentVelPitch) * accel.coerceIn(0.05, 0.85)
+        // Dynamic neuromuscular response damping (faster initial jerk on large 180s)
+        val baseAccel = when {
+            totalDist > 100.0 -> 22.0
+            totalDist > 50.0 -> 16.0
+            else -> 13.5
+        }
+        val accel = (baseAccel * flickMultiplier) * dt
+        currentVelYaw += (desiredVelYaw - currentVelYaw) * accel.coerceIn(0.06, 0.94)
+        currentVelPitch += (desiredVelPitch - currentVelPitch) * accel.coerceIn(0.06, 0.94)
 
         // Physiological micro-tremor (subtle 10Hz human hand micro-noise, <0.04 deg)
         noiseTime += dt * 10.0

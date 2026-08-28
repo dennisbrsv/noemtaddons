@@ -33,6 +33,21 @@ object MobMatcher {
         return DungeonListener.dungeonTeammates.any { it.name.equals(name, ignoreCase = true) || it.entity == entity }
     }
 
+    fun getTrueMinibossBody(entity: Entity): Entity {
+        if (entity is ArmorStand) {
+            val level = mc.level ?: return entity
+            val checkArea = AABB(
+                entity.x - 1.5, entity.y - 3.0, entity.z - 1.5,
+                entity.x + 1.5, entity.y + 1.0, entity.z + 1.5
+            )
+            val body = level.getEntities(entity, checkArea).find {
+                it is LivingEntity && it !is ArmorStand && it != mc.player && !isTeammate(it)
+            }
+            if (body != null) return body
+        }
+        return entity
+    }
+
     fun matches(
         entity: Entity,
         category: MobCategory,

@@ -8,6 +8,7 @@ import dev.noemt.client.event.impl.RenderOverlayEvent
 import dev.noemt.client.event.impl.TickEvent
 import dev.noemt.client.module.Module
 import dev.noemt.client.module.ModuleType
+import dev.noemt.client.utils.ChatUtils.removeFormatting
 import dev.noemt.client.utils.LocationUtils
 import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
@@ -39,7 +40,7 @@ object LoadoutModule : Module {
         register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Pre> {
             val packet = event.packet
             if (packet is net.minecraft.network.protocol.game.ClientboundOpenScreenPacket) {
-                LoadoutManager.onPacketOpenScreen(packet.title.string)
+                LoadoutManager.onPacketOpenScreen(packet.title.string, packet.containerId)
             } else if (packet is net.minecraft.network.protocol.game.ClientboundContainerClosePacket) {
                 LoadoutManager.onPacketCloseScreen()
             } else if (packet is net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket) {
@@ -73,20 +74,34 @@ object LoadoutModule : Module {
 
             // Check Miniboss Kill to Auto-Revert Loadout
             if (LoadoutManager.inMinibossFight) {
-                if (text.contains("was slain", ignoreCase = true) ||
-                    text.contains("was defeated", ignoreCase = true) ||
-                    text.contains("was killed", ignoreCase = true) ||
-                    text.contains("You killed", ignoreCase = true)
-                ) {
-                    val activeName = LoadoutManager.trackedMinibossName
-                    if (activeName.isBlank() || text.contains(activeName, ignoreCase = true) ||
-                        text.contains("Shadow Assassin", ignoreCase = true) ||
-                        text.contains("Lost Adventurer", ignoreCase = true) ||
-                        text.contains("Frozen Adventurer", ignoreCase = true) ||
-                        text.contains("Angry Archaeologist", ignoreCase = true) ||
-                        text.contains("King Midas", ignoreCase = true)
-                    ) {
-                        LoadoutManager.onMinibossDisappeared("Chat: $text")
+                val clean = text.removeFormatting().trim()
+                val isPlayerDeathToMob = clean.contains("was killed by", ignoreCase = true) ||
+                                         clean.contains("was slain by", ignoreCase = true) ||
+                                         clean.contains("was struck down by", ignoreCase = true) ||
+                                         clean.contains("fell to", ignoreCase = true)
+
+                if (!isPlayerDeathToMob) {
+                    val isMinibossSlain = clean.contains("was slain", ignoreCase = true) ||
+                                          clean.contains("was defeated", ignoreCase = true) ||
+                                          clean.contains("was killed", ignoreCase = true) ||
+                                          clean.contains("You killed", ignoreCase = true) ||
+                                          clean.contains("Defeated Shadow Assassin", ignoreCase = true) ||
+                                          clean.contains("Defeated Lost Adventurer", ignoreCase = true) ||
+                                          clean.contains("Defeated Frozen Adventurer", ignoreCase = true) ||
+                                          clean.contains("Defeated Angry Archaeologist", ignoreCase = true) ||
+                                          clean.contains("Defeated King Midas", ignoreCase = true)
+
+                    if (isMinibossSlain) {
+                        val activeName = LoadoutManager.trackedMinibossName
+                        if (activeName.isBlank() || clean.contains(activeName, ignoreCase = true) ||
+                            clean.contains("Shadow Assassin", ignoreCase = true) ||
+                            clean.contains("Lost Adventurer", ignoreCase = true) ||
+                            clean.contains("Frozen Adventurer", ignoreCase = true) ||
+                            clean.contains("Angry Archaeologist", ignoreCase = true) ||
+                            clean.contains("King Midas", ignoreCase = true)
+                        ) {
+                            LoadoutManager.onMinibossDisappeared("Chat: $clean")
+                        }
                     }
                 }
             }

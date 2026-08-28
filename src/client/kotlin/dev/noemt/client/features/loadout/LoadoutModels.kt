@@ -85,6 +85,7 @@ sealed class LoadoutCondition {
         override fun matches(context: ConditionContext): Boolean {
             if (!LocationUtils.inDungeon) return false
             if (context.inBloodRoom == true) return true
+            if (context.dungeonRoomType == dev.noemt.client.utils.map.core.RoomType.BLOOD) return true
             return dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
         }
     }
@@ -112,6 +113,9 @@ sealed class LoadoutCondition {
         val maxDistance: Double = 15.0
     ) : LoadoutCondition() {
         override fun matches(context: ConditionContext): Boolean {
+            if (mobCategory == MobCategory.BLOOD_MOB && (context.inBloodRoom == true || dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom())) {
+                return true
+            }
             val target = context.aimedEntity ?: return false
             return MobMatcher.matches(target, mobCategory, nameFilter, skullTexture)
         }
@@ -276,7 +280,7 @@ data class ConditionContext(
 )
 
 object SkyblockLoadoutConstants {
-    val LOADOUT_MENU_REGEX = Regex("""^\(\d+/\d+\) Loadouts$""")
+    val LOADOUT_MENU_REGEX = Regex("""(?:\(\d+/\d+\)\s+)?(?:Loadouts|Wardrobe)""", RegexOption.IGNORE_CASE)
     val LOADOUT_SLOTS = listOf(
         14, 15, 16,
         23, 24, 25,
