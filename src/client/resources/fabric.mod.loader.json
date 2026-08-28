@@ -20,12 +20,8 @@
 			"dev.noemt.loader.NoemtLoader"
 		]
 	},
-	"mixins": [
-		"noemtaddons.client.mixins.json"
-	],
 	"depends": {
 		"fabricloader": ">=0.16.0",
-		"minecraft": "~26.1.2",
-		"fabric-language-kotlin": "*"
+		"minecraft": "~26.1.2"
 	}
 }
