@@ -7,19 +7,15 @@ import io.github.notenoughupdates.moulconfig.annotations.Category
 import io.github.notenoughupdates.moulconfig.annotations.ConfigEditorBoolean
 import io.github.notenoughupdates.moulconfig.annotations.ConfigEditorColour
 import io.github.notenoughupdates.moulconfig.annotations.ConfigEditorSlider
+import dev.noemt.client.BuildConstants
 import io.github.notenoughupdates.moulconfig.annotations.ConfigEditorText
 import io.github.notenoughupdates.moulconfig.annotations.ConfigOption
 import io.github.notenoughupdates.moulconfig.common.text.StructuredText
 
-class NoemtaddonsConfig : Config() {
+open class NoemtaddonsConfig : Config() {
     override fun getTitle(): StructuredText {
-        return StructuredText.of("NoemtAddons Config")
+        return StructuredText.of("NoemtAddons Config (${BuildConstants.buildDisplayName})")
     }
-
-    @Expose
-    @Category(name = "General", desc = "General mod settings")
-    @JvmField
-    var general: GeneralCategory = GeneralCategory()
 
     @Expose
     @Category(name = "Dungeon Map", desc = "Dungeon Map and Cheater Map overlay settings")
@@ -35,9 +31,6 @@ class NoemtaddonsConfig : Config() {
     @Category(name = "Discord & Remote", desc = "Discord Bot Notifications and Remote WebSocket Server Settings")
     @JvmField
     var remote: RemoteCategory = RemoteCategory()
-
-    class GeneralCategory {
-    }
 
     class RemoteCategory {
         @Expose

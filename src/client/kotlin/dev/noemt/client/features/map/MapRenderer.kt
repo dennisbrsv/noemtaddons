@@ -1,5 +1,6 @@
 package dev.noemt.client.features.map
 
+import dev.noemt.client.BuildConstants
 import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.event.EventBus
 import dev.noemt.client.event.impl.RenderOverlayEvent
@@ -28,6 +29,7 @@ import java.awt.Color
 
 object MapRenderer {
     private const val MOD_ID = "noemtaddons"
+    private val isCheaterMapEnabled get() = BuildConstants.isCheatBuild && ConfigManager.config.map.dungeonMapCheater
     private val checkmarkGreen = Identifier.fromNamespaceAndPath(MOD_ID, "textures/gui/dungeonmap/checkmarks/green_check.png")
     private val checkmarkWhite = Identifier.fromNamespaceAndPath(MOD_ID, "textures/gui/dungeonmap/checkmarks/white_check.png")
     private val checkmarkUnknown = Identifier.fromNamespaceAndPath(MOD_ID, "textures/gui/dungeonmap/checkmarks/question.png")
@@ -76,7 +78,7 @@ object MapRenderer {
     private fun renderExtraInfo(ctx: GuiGraphicsExtractor) {
         val config = ConfigManager.config.map
         if (!config.mapExtraInfo) return
-        if (!config.dungeonMapCheater && !DungeonListener.dungeonStarted) return
+        if (!isCheaterMapEnabled && !DungeonListener.dungeonStarted) return
 
         val secretsStr = "§6Secrets: §b${ScoreCalculation.foundSecrets}§f/§e${DungeonScanner.secretCount}"
         val cryptsStr = "§6Crypts: ${ScoreCalculation.cryptsCount}"
@@ -100,8 +102,7 @@ object MapRenderer {
     }
 
     private fun applyCheater() {
-        val config = ConfigManager.config.map
-        if (!config.dungeonMapCheater) return
+        if (!isCheaterMapEnabled) return
         DungeonScanner.dungeonList.forEach { tile ->
             if (tile.state == RoomState.UNOPENED) tile.state = RoomState.UNDISCOVERED
         }
@@ -119,11 +120,11 @@ object MapRenderer {
 
         for (y in 0..10) for (x in 0..10) {
             val tile = DungeonScanner.dungeonList[y * 11 + x].takeUnless { it is Unknown } ?: continue
-            if (tile.state == RoomState.UNDISCOVERED && !config.dungeonMapCheater) continue
-            if (tile is DoorTile && getDoorState(tile) == RoomState.UNDISCOVERED && !config.dungeonMapCheater) continue
+            if (tile.state == RoomState.UNDISCOVERED && !isCheaterMapEnabled) continue
+            if (tile is DoorTile && getDoorState(tile) == RoomState.UNDISCOVERED && !isCheaterMapEnabled) continue
 
             var color = tile.getColor()
-            if (config.dungeonMapCheater && tile.state == RoomState.UNDISCOVERED) {
+            if (isCheaterMapEnabled && tile.state == RoomState.UNDISCOVERED) {
                 color = color.darker().darker()
             }
 
@@ -188,7 +189,7 @@ object MapRenderer {
 
             if (unq.data.isUnknown()) return@forEach
             if (unq.data.type == RoomType.ENTRANCE) return@forEach
-            if (!config.dungeonMapCheater && (roomTile.state == RoomState.UNDISCOVERED || roomTile.state == RoomState.UNOPENED)) return@forEach
+            if (!isCheaterMapEnabled && (roomTile.state == RoomState.UNDISCOVERED || roomTile.state == RoomState.UNOPENED)) return@forEach
 
             val checkPos = unq.getCheckmarkPosition()
             val cX = (checkPos.first / 2f) * fullCellSize + halfRoom

@@ -12,6 +12,8 @@ import dev.noemt.client.utils.map.core.RoomTile
 import dev.noemt.client.utils.map.core.RoomType
 import dev.noemt.client.utils.map.handlers.DungeonScanner
 import dev.noemt.client.utils.map.utils.ScanUtils
+import dev.noemt.client.module.Module
+import dev.noemt.client.module.ModuleType
 import net.minecraft.client.Minecraft
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.animal.sheep.Sheep
@@ -23,7 +25,12 @@ import net.minecraft.world.phys.Vec3
 import org.lwjgl.glfw.GLFW
 import kotlin.math.abs
 
-object AutoBloodCamp {
+object AutoBloodCamp : Module {
+    override val id = "auto_blood_camp"
+    override val name = "Auto Blood Camp"
+    override val description = "Automated aimbot and mob combat in Blood Room"
+    override val type = ModuleType.CHEAT
+
     private val mc: Minecraft get() = Minecraft.getInstance()
 
     var watcherMessageCount = 0
@@ -44,7 +51,7 @@ object AutoBloodCamp {
 
     private val lividDisablerRegex = Regex("""\[BOSS\] .+ Livid: My shadows are everywhere, THEY WILL FIND YOU!!""", RegexOption.IGNORE_CASE)
 
-    fun init() {
+    override fun init() {
         register<WorldChangeEvent> {
             resetCampState()
         }
@@ -253,7 +260,6 @@ object AutoBloodCamp {
                 .mapNotNull { (stand, data) ->
                     val endVec = data.endVector ?: return@mapNotNull null
 
-                    // Record spawn landing positions
                     if (recordedSpawnLocations.none { it.distanceTo(endVec) < 1.0 }) {
                         recordedSpawnLocations.add(endVec)
                     }

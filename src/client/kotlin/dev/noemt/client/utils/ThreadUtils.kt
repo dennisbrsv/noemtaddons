@@ -3,6 +3,9 @@ package dev.noemt.client.utils
 import dev.noemt.client.event.EventBus
 import dev.noemt.client.event.impl.TickEvent
 import dev.noemt.client.event.priority.EventPriority
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import net.minecraft.client.Minecraft
 import org.slf4j.LoggerFactory
 import java.util.concurrent.PriorityBlockingQueue
@@ -10,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 object ThreadUtils {
     private val logger = LoggerFactory.getLogger("noemtaddons-threads")
+    val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val clientScheduler = TickScheduler()
     private val serverScheduler = TickScheduler()
 

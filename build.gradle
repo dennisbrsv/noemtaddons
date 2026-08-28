@@ -48,7 +48,7 @@ dependencies {
 	implementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
 
 	// MoulConfig Dependency
-	shadowModImpl("org.notenoughupdates.moulconfig:modern-26.2:4.7.2")
+	shadowModImpl("org.notenoughupdates.moulconfig:modern-26.1:4.7.2")
 }
 
 processResources {
@@ -77,10 +77,61 @@ java {
 	targetCompatibility = JavaVersion.VERSION_25
 }
 
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+def createBuildProps(String buildType) {
+	def dir = file("${layout.buildDirectory.get().asFile}/generated/buildProps/${buildType}")
+	dir.mkdirs()
+	def propFile = file("${dir}/build-info.properties")
+	propFile.text = "build_type=${buildType}\nversion=${project.version}\n"
+	return dir
+}
+
+def shadowCheat = tasks.register('shadowJarCheat', ShadowJar) {
+	group = "build"
+	description = "Builds the cheat version shadow jar."
+	configurations = [project.configurations.shadowModImpl]
+	from sourceSets.main.output
+	from sourceSets.client.output
+	from({ createBuildProps("cheat") })
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	exclude "moulconfig.accesswidener"
+	relocate "io.github.notenoughupdates.moulconfig", "dev.noemt.client.deps.moulconfig"
+	archiveClassifier.set("cheat")
+	mergeServiceFiles()
+
+	def projectName = project.name
+	inputs.property "projectName", projectName
+	from("LICENSE") {
+		rename { "${it}_$projectName" }
+	}
+}
+
+def shadowLegit = tasks.register('shadowJarLegit', ShadowJar) {
+	group = "build"
+	description = "Builds the legit version shadow jar."
+	configurations = [project.configurations.shadowModImpl]
+	from sourceSets.main.output
+	from sourceSets.client.output
+	from({ createBuildProps("legit") })
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	exclude "moulconfig.accesswidener"
+	relocate "io.github.notenoughupdates.moulconfig", "dev.noemt.client.deps.moulconfig"
+	archiveClassifier.set("legit")
+	mergeServiceFiles()
+
+	def projectName = project.name
+	inputs.property "projectName", projectName
+	from("LICENSE") {
+		rename { "${it}_$projectName" }
+	}
+}
+
 tasks.shadowJar {
 	configurations = [project.configurations.shadowModImpl]
 	from sourceSets.main.output
 	from sourceSets.client.output
+	from({ createBuildProps("cheat") })
 	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	exclude "moulconfig.accesswidener"
 	relocate "io.github.notenoughupdates.moulconfig", "dev.noemt.client.deps.moulconfig"
@@ -94,12 +145,63 @@ tasks.shadowJar {
 	}
 }
 
+tasks.register('buildCheat') {
+	group = "build"
+	description = "Builds the cheat version jar."
+	dependsOn shadowCheat
+}
+
+tasks.register('buildLegit') {
+	group = "build"
+	description = "Builds the legit version jar."
+	dependsOn shadowLegit
+}
+
+def createLoaderProps(String flavor) {
+	def dir = file("${layout.buildDirectory.get().asFile}/generated/loaderProps/${flavor}")
+	dir.mkdirs()
+	def propFile = file("${dir}/loader-info.properties")
+	propFile.text = "flavor=${flavor}\nversion=${project.version}\n"
+	return dir
+}
+
+def createLoaderJar(String name, String flavor) {
+	return tasks.register(name, Jar) {
+		group = "build"
+		description = "Builds the ${flavor} mod-loader jar."
+		from(sourceSets.client.output) {
+			include "dev/noemt/loader/**"
+		}
+		from(createLoaderProps(flavor))
+		from("src/client/resources/fabric.mod.loader.json") {
+			rename { "fabric.mod.json" }
+		}
+		archiveBaseName.set("noemtaddons-${flavor}-loader")
+		archiveClassifier.set("")
+		destinationDirectory.set(file("${layout.buildDirectory.get().asFile}/libs"))
+	}
+}
+
+def loaderLegit = createLoaderJar("loaderJarLegit", "legit")
+def loaderCheat = createLoaderJar("loaderJarCheat", "cheat")
+
+tasks.register('buildLoaders') {
+	group = "build"
+	description = "Builds both legit and cheat loader JARs."
+	dependsOn loaderLegit
+	dependsOn loaderCheat
+}
+
 tasks.jar {
 	enabled = false
 }
 
 tasks.assemble {
 	dependsOn tasks.shadowJar
+	dependsOn shadowCheat
+	dependsOn shadowLegit
+	dependsOn loaderLegit
+	dependsOn loaderCheat
 }
 
 publishing {

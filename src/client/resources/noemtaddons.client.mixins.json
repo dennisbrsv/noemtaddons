@@ -9,7 +9,9 @@
 		"MixinGui",
 		"IMapState",
 		"IPlayerInfo",
-		"IKeyMapping"
+		"IKeyMapping",
+		"MixinCommandSuggestions",
+		"MixinChatScreen"
 	],
 	"injectors": {
 		"defaultRequire": 1

@@ -12,11 +12,11 @@ object ChatUtils {
     fun modMessage(msg: Any?) = chat("§b[NoemtAddons]§r $msg")
 
     fun chat(msg: Any?) = mc.execute {
-        mc.gui.hud.getChat().addClientSystemMessage(Component.literal(msg.toString().addColor()))
+        mc.gui.chat.addClientSystemMessage(Component.literal(msg.toString().addColor()))
     }
 
     fun chat(comp: Component) = mc.execute {
-        mc.gui.hud.getChat().addClientSystemMessage(comp)
+        mc.gui.chat.addClientSystemMessage(comp)
     }
 
     fun sendPartyMessage(msg: Any?) {
@@ -26,11 +26,11 @@ object ChatUtils {
 
     fun showTitle(title: String, subtitle: String = "") {
         mc.execute {
-            mc.gui.hud.setTitle(Component.literal(title.addColor()))
+            mc.gui.setTitle(Component.literal(title.addColor()))
             if (subtitle.isNotEmpty()) {
-                mc.gui.hud.setSubtitle(Component.literal(subtitle.addColor()))
+                mc.gui.setSubtitle(Component.literal(subtitle.addColor()))
             }
-            mc.gui.hud.setTimes(5, 30, 5)
+            mc.gui.setTimes(5, 30, 5)
         }
     }
 

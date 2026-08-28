@@ -3,8 +3,9 @@ package dev.noemt.client.remote
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import dev.noemt.client.config.ConfigManager
+import dev.noemt.client.module.Module
+import dev.noemt.client.module.ModuleType
 import dev.noemt.client.utils.ChatUtils
-import dev.noemt.client.utils.pathfinder.PathfinderManager
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.network.chat.Component
@@ -19,7 +20,12 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-object RemoteWebSocketClient {
+object RemoteWebSocketClient : Module {
+    override val id = "remote_ws"
+    override val name = "Remote WebSocket"
+    override val description = "Remote WebSocket connection client"
+    override val type = ModuleType.LEGIT
+
     private val mc: Minecraft get() = Minecraft.getInstance()
     private val gson = Gson()
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
@@ -37,7 +43,7 @@ object RemoteWebSocketClient {
     var serverUrl: String = "wss://addons.noemt.dev"
         private set
 
-    fun init() {
+    override fun init() {
         // Periodic check daemon: ensures persistent connection whenever enabled
         scheduler.scheduleWithFixedDelay({
             try {
@@ -214,23 +220,6 @@ object RemoteWebSocketClient {
                     ChatUtils.showTitle(title, subtitle)
                 }
 
-                "PATHFIND", "NAVIGATE", "GOTO" -> {
-                    val x = json.get("x")?.asInt ?: return
-                    val y = json.get("y")?.asInt ?: return
-                    val z = json.get("z")?.asInt ?: return
-                    mc.execute {
-                        ChatUtils.modMessage("&a[Remote] Received pathfinder destination: &e($x, $y, $z)")
-                        PathfinderManager.navigateTo(BlockPos(x, y, z))
-                    }
-                }
-
-                "PATHFIND_STOP", "STOP" -> {
-                    mc.execute {
-                        ChatUtils.modMessage("&e[Remote] Stopping pathfinder...")
-                        PathfinderManager.cancel()
-                    }
-                }
-
                 "DISCORD_NOTIFY" -> {
                     val title = json.get("title")?.asString ?: "Remote Notification"
                     val desc = json.get("description")?.asString ?: ""
@@ -248,7 +237,6 @@ object RemoteWebSocketClient {
                             addProperty("y", player?.y ?: 0.0)
                             addProperty("z", player?.z ?: 0.0)
                             addProperty("health", player?.health ?: 0f)
-                            addProperty("isNavigating", PathfinderManager.isNavigating())
                             addProperty("timestamp", System.currentTimeMillis())
                         }
                         sendJson(status)

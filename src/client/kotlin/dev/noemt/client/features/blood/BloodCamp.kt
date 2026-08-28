@@ -16,6 +16,8 @@ import dev.noemt.client.utils.MathUtils.add
 import dev.noemt.client.utils.MathUtils.invert
 import dev.noemt.client.utils.NumbersUtils.toFixed
 import dev.noemt.client.utils.ThreadUtils
+import dev.noemt.client.module.Module
+import dev.noemt.client.module.ModuleType
 import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket
@@ -28,7 +30,12 @@ import net.minecraft.world.entity.monster.zombie.Zombie
 import net.minecraft.world.item.Items
 import net.minecraft.world.phys.Vec3
 
-object BloodCamp {
+object BloodCamp : Module {
+    override val id = "blood_camp"
+    override val name = "Blood Camp Helper"
+    override val description = "Calculates mob spawn predictions and Watcher dialogue timers"
+    override val type = ModuleType.LEGIT
+
     private val mc: Minecraft get() = Minecraft.getInstance()
 
     val bloodMobs = HashMap<ArmorStand, BloodEntity>()
@@ -45,7 +52,7 @@ object BloodCamp {
         var endVector: Vec3? = null,
     )
 
-    fun init() {
+    override fun init() {
         register<ChatMessageEvent> {
             if (LocationUtils.inBoss) return@register
             if (event.unformattedText != "[BOSS] The Watcher: Let's see how you can handle this.") return@register

@@ -10,7 +10,7 @@ class RenderContext(val matrixStack: PoseStack, val consumers: SubmitNodeCollect
     companion object {
         fun fromContext(ctx: LevelRenderContext): RenderContext {
             val mc = Minecraft.getInstance()
-            return RenderContext(ctx.poseStack(), ctx.submitNodeCollector(), mc.gameRenderer.mainCamera())
+            return RenderContext(ctx.poseStack(), ctx.submitNodeCollector(), mc.gameRenderer.mainCamera)
         }
     }
 }

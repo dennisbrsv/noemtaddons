@@ -142,16 +142,6 @@ object DebugUtils {
         sb.appendLine("Skyblock ID: '$sbId'")
         sb.appendLine("Item UUID: '$uuid'")
 
-        val teleportProfile = dev.noemt.client.utils.pathfinder.TeleportAbilityHelper.parseTeleportProfile(player.inventory.selectedSlot, stack)
-        sb.appendLine("--- Parsed Teleport Profile ---")
-        if (teleportProfile != null) {
-            sb.appendLine("Instant Transmission Range: ${teleportProfile.instantTransmissionRange} blocks")
-            sb.appendLine("Has Etherwarp: ${teleportProfile.hasEtherwarp}")
-            sb.appendLine("Etherwarp Range: ${teleportProfile.etherwarpRange} blocks")
-        } else {
-            sb.appendLine("Not recognized as AOTE / AOTV teleport item.")
-        }
-
         sb.appendLine("--- Full Lore Lines ---")
         val rawLore = dev.noemt.client.utils.ItemUtils.run { stack.lore }
         for ((idx, line) in rawLore.withIndex()) {

@@ -218,6 +218,66 @@ object Render3D {
         matrixStack.popPose()
     }
 
+    fun RenderContext.render3DBezier2(
+        p1: Vec3,
+        control: Vec3,
+        p3: Vec3,
+        color: Color,
+        lineWidth: Number = 3f,
+        depth: Boolean = true,
+        segments: Int = 24
+    ) {
+        val cameraPos = camera.position()
+        matrixStack.pushPose()
+        matrixStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
+
+        val layer = if (depth) NoemtRenderLayers.LINES else NoemtRenderLayers.LINES_THROUGH_WALLS
+        consumers.order(0).submitCustomGeometry(matrixStack, layer) { pose, buffer ->
+            var prevX = p1.x.toFloat()
+            var prevY = p1.y.toFloat()
+            var prevZ = p1.z.toFloat()
+
+            for (i in 1..segments) {
+                val t = i.toFloat() / segments
+                val u = 1f - t
+                val curX = (u * u * p1.x + 2f * u * t * control.x + t * t * p3.x).toFloat()
+                val curY = (u * u * p1.y + 2f * u * t * control.y + t * t * p3.y).toFloat()
+                val curZ = (u * u * p1.z + 2f * u * t * control.z + t * t * p3.z).toFloat()
+
+                buffer.addLine(
+                    pose,
+                    prevX, prevY, prevZ,
+                    curX, curY, curZ,
+                    color.red / 255f, color.green / 255f, color.blue / 255f, color.alpha / 255f,
+                    lineWidth.toFloat()
+                )
+
+                prevX = curX
+                prevY = curY
+                prevZ = curZ
+            }
+        }
+
+        matrixStack.popPose()
+    }
+
+    fun RenderContext.renderWaypoint(
+        pos: Vec3,
+        color: Color,
+        label: String = "",
+        seeThroughBlocks: Boolean = true
+    ) {
+        val box = AABB(pos.x - 0.3, pos.y, pos.z - 0.3, pos.x + 0.3, pos.y + 0.6, pos.z + 0.3)
+        renderBoxBounds(box, color, Color(color.red, color.green, color.blue, 60), outline = true, fill = true, phase = seeThroughBlocks)
+
+        val beamTop = Vec3(pos.x, pos.y + 120.0, pos.z)
+        renderLine(pos, beamTop, Color(color.red, color.green, color.blue, 120), thickness = 2f, phase = seeThroughBlocks)
+
+        if (label.isNotEmpty()) {
+            renderString(label, pos.x, pos.y + 1.2, pos.z, color, scale = 1.2f, phase = seeThroughBlocks)
+        }
+    }
+
     private fun VertexConsumer.addFilledBoxVertices(pose: PoseStack.Pose, x1: Double, y1: Double, z1: Double, x2: Double, y2: Double, z2: Double, r: Float, g: Float, b: Float, a: Float) {
         val minX = x1.toFloat() - 0.002f
         val minY = y1.toFloat() - 0.002f

@@ -9,16 +9,23 @@ import dev.noemt.client.render.Render3D.renderBox
 import dev.noemt.client.render.Render3D.renderTracer
 import dev.noemt.client.utils.DungeonListener
 import dev.noemt.client.utils.LocationUtils
+import dev.noemt.client.module.Module
+import dev.noemt.client.module.ModuleType
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.phys.Vec3
 
-object BloodESP {
+object BloodESP : Module {
+    override val id = "blood_esp"
+    override val name = "Blood Room ESP"
+    override val description = "In-world 3D bounding box and tracer to the Blood Room"
+    override val type = ModuleType.CHEAT
+
     private val mc: Minecraft get() = Minecraft.getInstance()
     private var bloodData: Pair<BlockPos, Int>? = null
 
-    fun init() {
+    override fun init() {
         register<WorldChangeEvent> { bloodData = null }
 
         register<TickEvent.Start> {

@@ -5,6 +5,8 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.utils.ChatUtils
+import dev.noemt.client.module.Module
+import dev.noemt.client.module.ModuleType
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -12,7 +14,14 @@ import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 
-object DiscordBotManager {
+object DiscordBotManager : Module {
+    override val id = "discord_bot"
+    override val name = "Discord Bot"
+    override val description = "Discord Bot and Webhook notifications integration"
+    override val type = ModuleType.LEGIT
+
+    override fun init() {}
+
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
         .build()

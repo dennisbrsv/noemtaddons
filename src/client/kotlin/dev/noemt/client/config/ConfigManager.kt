@@ -1,5 +1,6 @@
 package dev.noemt.client.config
 
+import dev.noemt.client.BuildConstants
 import io.github.notenoughupdates.moulconfig.managed.ManagedConfig
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents
 import net.fabricmc.loader.api.FabricLoader
@@ -7,7 +8,9 @@ import net.minecraft.client.Minecraft
 import java.io.File
 
 object ConfigManager {
-    private val configFile: File = FabricLoader.getInstance().configDir.resolve("noemtaddons.json").toFile()
+    private val configFile: File = FabricLoader.getInstance().configDir.resolve(
+        if (BuildConstants.isLegitBuild) "noemtaddons_legit.json" else "noemtaddons.json"
+    ).toFile()
 
     val holder: ManagedConfig<NoemtaddonsConfig> = ManagedConfig.create(
         configFile,

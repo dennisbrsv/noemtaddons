@@ -1,8 +1,11 @@
 package dev.noemt.client.features.map
 
+import dev.noemt.client.BuildConstants
 import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.event.EventBus
 import dev.noemt.client.event.impl.RenderWorldEvent
+import dev.noemt.client.module.Module
+import dev.noemt.client.module.ModuleType
 import dev.noemt.client.render.Render3D.renderBoxBounds
 import dev.noemt.client.utils.DungeonListener
 import dev.noemt.client.utils.LocationUtils
@@ -16,8 +19,13 @@ import dev.noemt.client.utils.map.utils.ScanUtils
 import net.minecraft.world.level.block.Blocks
 import net.minecraft.world.phys.AABB
 
-object DungeonMap {
-    fun init() {
+object DungeonMap : Module {
+    override val id = "dungeon_map"
+    override val name = "Dungeon Map"
+    override val description = "Custom Dungeon Map overlay and tracking"
+    override val type = ModuleType.LEGIT
+
+    override fun init() {
         MapUtils.init()
         ScanUtils.init()
         DungeonScanner.init()
@@ -31,7 +39,7 @@ object DungeonMap {
             if (!config.mapEnabled || !LocationUtils.inDungeon || LocationUtils.inBoss) return@register
 
             val mimicRoom = DungeonScanner.mimicRoom
-            if (config.mimicEsp && !ScoreCalculation.mimicKilled && mimicRoom != null) {
+            if (BuildConstants.isCheatBuild && config.mimicEsp && !ScoreCalculation.mimicKilled && mimicRoom != null) {
                 for (chestPos in mimicRoom.trappedChestPositions) {
                     if (!WorldUtils.getStateAt(chestPos).`is`(Blocks.TRAPPED_CHEST)) continue
                     val rotation = mimicRoom.rotation ?: continue
@@ -50,7 +58,7 @@ object DungeonMap {
                 }
             }
 
-            if (!config.boxDoors) return@register
+            if (!BuildConstants.isCheatBuild || !config.boxDoors) return@register
             val shouldHideUndiscovered = !config.dungeonMapCheater || DungeonListener.dungeonStarted
 
             for (tile in DungeonScanner.dungeonList) {

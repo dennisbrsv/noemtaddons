@@ -1,8 +1,8 @@
 package dev.noemt.client.render
 
-import com.mojang.blaze3d.PrimitiveTopology
 import com.mojang.blaze3d.pipeline.RenderPipeline
 import com.mojang.blaze3d.vertex.DefaultVertexFormat
+import com.mojang.blaze3d.vertex.VertexFormat
 import dev.noemt.Noemtaddons
 import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.resources.Identifier
@@ -12,7 +12,7 @@ object NoemtRenderPipelines {
     val FILLED = RenderPipelines.register(
         RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET).apply {
             withLocation(id("pipeline/filled"))
-            withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR).withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+            withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES)
         }.build()
     )
 
@@ -32,7 +32,7 @@ object NoemtRenderPipelines {
     val FILLED_THROUGH_WALLS = RenderPipelines.register(
         RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET).apply {
             withLocation(id("pipeline/filled_through_walls"))
-            withVertexBinding(0, DefaultVertexFormat.POSITION_COLOR).withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+            withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLES)
             withDepthStencilState(Optional.empty())
         }.build()
     )

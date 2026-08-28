@@ -23,7 +23,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.multiplayer.PlayerInfo
 import net.minecraft.client.player.AbstractClientPlayer
 import net.minecraft.network.protocol.game.*
-import net.minecraft.world.entity.EntityTypes
+import net.minecraft.world.entity.EntityType
 
 object DungeonListener {
     private val tablistRegex = Regex("""^\[\d+] (?:\[[^]]+] )*([A-Za-z0-9_]{1,16}) .*\((\w+)(?: (\w+))?\)$""")
@@ -82,7 +82,7 @@ object DungeonListener {
                 }
 
                 is ClientboundAddEntityPacket -> {
-                    if (packet.type != EntityTypes.PLAYER) return@register
+                    if (packet.type != EntityType.PLAYER) return@register
                     val entity = mc.level?.getEntity(packet.id) as? AbstractClientPlayer ?: return@register
                     dungeonTeammates.find { it.entity == null && it.name == entity.name.string }?.entity = entity
                 }
