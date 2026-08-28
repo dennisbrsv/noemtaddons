@@ -1,23 +1,19 @@
-§b§lNoemtAddons v1.0.0 Update Changelog
+§b§lNoemtAddons v1.0.1 Update Changelog
 
-§a[New Features]
-§e• Modern 26.1.2 Fabric Port
-§7  Ported and optimized for Minecraft 26.1.2 with Java 25.
-§e• Custom $ Command Prefix with Tab Completion
-§7  All commands now use $ (e.g. $noemt, $stalk, $path) with full Brigadier autocompletion.
-§e• Real-Time Player Stalker ($stalk {ign})
-§7  Real-time 3D tracer line, through-wall bounding box, and distance tracking.
-§e• SkyHanni 3D Pathfinder
-§7  Catmull-Rom spline interpolation, quadratic Bezier curve, and beacon waypoints.
-§e• Dual Build System (Legit & Cheat)
-§7  Modular build pipeline with runtime type verification.
-§e• Dynamic Mod Loader
-§7  Instant automatic updates from https://addons.noemt.dev.
+§a[Loadout Swapper & Triggers]
+§e• Multi-Attempt Swap Verification
+§7  Verifies chat and container sync on room entry with automatic retries.
+§e• Miniboss Memory & Race Condition Resolution
+§7  Queued revert mechanics and true LivingEntity body resolution.
+§e• Instant Blood Room & Dungeon Start Transitions
+§7  Immediate rule evaluation and synced loadout state machine.
 
-§a[Commands]
-§7  $noemt                 - Open configuration GUI
-§7  $noemt changelog       - View this changelog window
-§7  $noemt modules         - View active and omitted modules
-§7  $stalk <ign>           - Track player in real-time
-§7  $path <x> <y> <z>      - 3D pathfind to coordinates
-§7  $path <ign>            - 3D pathfind to a player
+§a[AutoBloodCamp]
+§e• Prioritized Ground Mob Targeting
+§7  Direct aim locking on mob bounding boxes with continuous full CPS sweeping.
+§e• Natural Player Head Rotations
+§7  Decoupled head and torso yaw within 45° shoulder limits.
+§e• Grounded TNT Evasion (6m Radius)
+§7  Pillar-aware safe spot pathfinding and grounded Etherwarp targeting.
+§e• Context-Aware Resting Aim
+§7  Aims at last air spawn box or area average if ground mobs were engaged.

@@ -79,10 +79,10 @@ def init_auth(custom_password: Optional[str] = None):
 
 def get_jar_path(flavor: str) -> Optional[Path]:
     candidates = [
-        JARS_DIR / f"noemtaddons-1.0.0-{flavor}.jar",
+        JARS_DIR / f"noemtaddons-1.0.1-{flavor}.jar",
         JARS_DIR / f"noemtaddons-{flavor}.jar",
         Path(__file__).parent / "jars" / f"noemtaddons-{flavor}.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-1.0.0-{flavor}.jar",
+        Path(__file__).parent / "jars" / f"noemtaddons-1.0.1-{flavor}.jar",
     ]
     for p in candidates:
         if p.exists() and p.is_file():
@@ -92,7 +92,7 @@ def get_jar_path(flavor: str) -> Optional[Path]:
 
 def get_loader_jar_path(flavor: str) -> Optional[Path]:
     candidates = [
-        JARS_DIR / f"noemtaddons-{flavor}-loader-1.0.0.jar",
+        JARS_DIR / f"noemtaddons-{flavor}-loader-1.0.1.jar",
         JARS_DIR / f"noemtaddons-{flavor}-loader.jar",
         Path(__file__).parent / "jars" / f"noemtaddons-{flavor}-loader.jar",
     ]
@@ -129,7 +129,7 @@ def compute_version_metadata() -> dict:
     cheat_info = get_file_info(cheat_p) if cheat_p else {"exists": False}
 
     return {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "timestamp": int(datetime.now().timestamp()),
         "last_build": LAST_BUILD_TIME,
         "build_status": LAST_BUILD_STATUS,
@@ -552,7 +552,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
     # 3. Changelog
     if clean_path in ("/changelog", "/api/changelog"):
         changelog_p = Path(__file__).parent / "changelog.txt"
-        content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.0"
+        content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.1"
         send_http_response(writer, 200, "text/plain; charset=utf-8", content.encode("utf-8"))
         return
 

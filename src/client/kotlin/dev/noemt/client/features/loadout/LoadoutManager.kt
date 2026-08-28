@@ -79,6 +79,17 @@ object LoadoutManager {
     private var pendingMinibossRevertLoadoutId: String? = null
     private var pendingMinibossRevertReason: String = ""
 
+    // Swap Verification & Multi-Attempt Engine (for Dungeon / Blood Room entry)
+    var pendingVerificationTargetId: String? = null
+        private set
+    var pendingVerificationReason: String = ""
+        private set
+    var isSwapConfirmed: Boolean = false
+        private set
+    private var verificationAttempts: Int = 0
+    private var nextVerificationCheckMs: Long = 0L
+    private const val MAX_VERIFICATION_ATTEMPTS = 3
+
     // Instance / Area tracking
     var lastDetectedInstance: GameInstanceType? = null
         private set
@@ -366,12 +377,22 @@ object LoadoutManager {
         wasInBloodRoom = false
         bloodRoomTriggeredThisEntry = false
         lastOpenContainerId = 0
+        pendingVerificationTargetId = null
+        pendingVerificationReason = ""
+        isSwapConfirmed = false
+        verificationAttempts = 0
+        nextVerificationCheckMs = 0L
         resetMinibossState()
         resetSwap()
     }
 
     fun onPlayerManualLoadoutSelect(id: String, source: String = "Manual") {
         if (!loadouts.containsKey(id)) return
+        if (id == pendingVerificationTargetId) {
+            isSwapConfirmed = true
+            pendingVerificationTargetId = null
+            verificationAttempts = 0
+        }
         if (currentLoadoutId != id) {
             previousLoadoutId = currentLoadoutId
             currentLoadoutId = id
@@ -453,6 +474,20 @@ object LoadoutManager {
         currentLoadoutId = id
         pendingLoadout = loadout
         pendingReason = reason
+
+        val isEntryTrigger = reason.contains("Blood", ignoreCase = true) ||
+                             reason.contains("Dungeon", ignoreCase = true) ||
+                             reason.contains("Rule", ignoreCase = true) ||
+                             reason.contains("Entry", ignoreCase = true) ||
+                             reason.contains("Fresh", ignoreCase = true)
+
+        if (isEntryTrigger && pendingVerificationTargetId != id) {
+            pendingVerificationTargetId = id
+            pendingVerificationReason = reason
+            isSwapConfirmed = false
+            verificationAttempts = 1
+            nextVerificationCheckMs = System.currentTimeMillis() + 1200L
+        }
 
         ChatUtils.modMessage("&b[Loadout] &aSwapping to: &e${loadout.name} &7(Slot ${loadout.loadoutSlot} | Trigger: &f$reason&7)")
 
@@ -540,7 +575,32 @@ object LoadoutManager {
             checkGameInstance()
         }
 
-        // 3. Process automated GUI swap state machine
+        // 5. Verification & Multi-Attempt Retry Engine (Ensures loadout actually swapped on entry / rules)
+        if (pendingVerificationTargetId != null && !isExecutingSwap) {
+            val targetId = pendingVerificationTargetId!!
+            val targetLoadout = loadouts[targetId]
+            if (targetLoadout != null) {
+                val now = System.currentTimeMillis()
+                if (now >= nextVerificationCheckMs) {
+                    if (verificationAttempts < MAX_VERIFICATION_ATTEMPTS) {
+                        verificationAttempts++
+                        val targetName = targetLoadout.name
+                        ChatUtils.modMessage("&b[Loadout] &eSwap unconfirmed for &f$targetName &e(Attempt $verificationAttempts/$MAX_VERIFICATION_ATTEMPTS)... Retrying /loadouts with short cooldown.")
+                        nextVerificationCheckMs = now + 950L
+                        swapTo(targetId, "$pendingVerificationReason (Retry #$verificationAttempts)", force = true)
+                    } else {
+                        // Max retries reached
+                        pendingVerificationTargetId = null
+                        verificationAttempts = 0
+                    }
+                }
+            } else {
+                pendingVerificationTargetId = null
+                verificationAttempts = 0
+            }
+        }
+
+        // 6. Process automated GUI swap state machine
         if (currentStage == SwapStage.IDLE) return
         val player = mc.player ?: run {
             resetSwap()

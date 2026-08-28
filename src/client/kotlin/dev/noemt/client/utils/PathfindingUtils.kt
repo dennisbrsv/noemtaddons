@@ -144,7 +144,7 @@ object PathfindingUtils {
         }
     }
 
-    fun findSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 5.0): BlockPos? {
+    fun findSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 6.0): BlockPos? {
         val player = mc.player ?: return null
         val candidates = getBloodRoomFloorPositions()
         if (candidates.isEmpty()) return null
@@ -153,7 +153,7 @@ object PathfindingUtils {
             Vec3(it.x + 0.5, 69.5, it.z + 0.5)
         }
 
-        // Candidates must be >= 5 blocks from TNT and not blocked behind pillars
+        // Candidates must be >= 6 blocks from TNT and not blocked behind pillars
         val safeCandidates = candidates.filter { pos ->
             minDistanceToTnts(pos, tntPositions) >= minDistance &&
             (roomCenter == null || hasCenterLineOfSight(pos, roomCenter))
@@ -171,7 +171,7 @@ object PathfindingUtils {
         return (if (nonBlocked.isNotEmpty()) nonBlocked else candidates).maxByOrNull { minDistanceToTnts(it, tntPositions) }
     }
 
-    fun findAotvSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 5.0): BlockPos? {
+    fun findAotvSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 6.0): BlockPos? {
         val player = mc.player ?: return null
         val eyePos = player.eyePosition
         val candidates = getBloodRoomFloorPositions()
@@ -217,7 +217,7 @@ object PathfindingUtils {
             val dist = eyePos.distanceTo(targetTop)
 
             dist in 4.0..13.0 &&
-            minDistanceToTnts(pos, tntPositions) >= 5.0 &&
+            minDistanceToTnts(pos, tntPositions) >= 6.0 &&
             hasLineOfSight(eyePos, targetTop) &&
             hasLineOfSight(candidateEye, target)
         }.minByOrNull { pos ->
@@ -232,7 +232,7 @@ object PathfindingUtils {
         if (candidates.isEmpty()) return null
 
         val safeCandidates = candidates.filter { pos ->
-            minDistanceToTnts(pos, tntPositions) >= 5.0
+            minDistanceToTnts(pos, tntPositions) >= 6.0
         }
 
         return safeCandidates

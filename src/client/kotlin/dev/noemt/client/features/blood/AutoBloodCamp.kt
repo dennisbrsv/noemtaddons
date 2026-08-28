@@ -61,6 +61,9 @@ object AutoBloodCamp : Module {
 
     private val recordedSpawnLocations = mutableListOf<Vec3>()
     private val recordedBoxPositions = mutableListOf<Vec3>()
+    private val recordedGroundMobPositions = mutableListOf<Vec3>()
+    private var lastSpawnedMobPosition: Vec3? = null
+    private var hasKilledGroundMobs = false
 
     private val lividDisablerRegex = Regex("""\[BOSS\] .+ Livid: My shadows are everywhere, THEY WILL FIND YOU!!""", RegexOption.IGNORE_CASE)
 
@@ -242,7 +245,7 @@ object AutoBloodCamp : Module {
                 val dangerousTnts = tntEntities.filter { tnt ->
                     val dist2D = hypot(player.x - tnt.x, player.z - tnt.z)
                     val dist3D = player.distanceTo(tnt)
-                    dist2D < 5.0 || dist3D < 5.0
+                    dist2D < 6.0 || dist3D < 6.0
                 }
 
                 if (dangerousTnts.isNotEmpty()) {
@@ -251,8 +254,8 @@ object AutoBloodCamp : Module {
                     }
                     val now = System.currentTimeMillis()
 
-                    val safeWalkPos = PathfindingUtils.findSafePositionFromTnts(tntPositions, 5.0)
-                    val safeAotvPos = PathfindingUtils.findAotvSafePositionFromTnts(tntPositions, 5.0)
+                    val safeWalkPos = PathfindingUtils.findSafePositionFromTnts(tntPositions, 6.0)
+                    val safeAotvPos = PathfindingUtils.findAotvSafePositionFromTnts(tntPositions, 6.0)
 
                     val walkDist = safeWalkPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
 
@@ -338,6 +341,12 @@ object AutoBloodCamp : Module {
                 val targetVec = targetEntity.boundingBox.center
                 val dist = player.distanceTo(targetEntity)
 
+                hasKilledGroundMobs = true
+                val mobPos = targetEntity.position()
+                if (recordedGroundMobPositions.none { it.distanceTo(mobPos) < 1.5 }) {
+                    recordedGroundMobPositions.add(mobPos)
+                }
+
                 if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
                     PathfindingUtils.stopMovement()
                 }
@@ -360,6 +369,8 @@ object AutoBloodCamp : Module {
                     if (!isInsideBloodRoom(endVec)) return@mapNotNull null
 
                     val boxPos = endVec.add(0.0, 2.0, 0.0)
+                    lastSpawnedMobPosition = boxPos
+
                     if (recordedBoxPositions.none { it.distanceTo(boxPos) < 1.0 }) {
                         recordedBoxPositions.add(boxPos)
                     }
@@ -388,6 +399,7 @@ object AutoBloodCamp : Module {
                 val endVec = data.endVector!!
                 // Center of the bounding box in the air (Y+2.0)
                 val boxTargetVec = endVec.add(0.0, 2.0, 0.0)
+                lastSpawnedMobPosition = boxTargetVec
 
                 val eyePos = player.eyePosition
                 val dist = eyePos.distanceTo(boxTargetVec)
@@ -431,12 +443,24 @@ object AutoBloodCamp : Module {
                 return@register
             }
 
-            // 8. Resting Position: Average position of all recorded boxes in the air
-            val restingTarget: Vec3 = if (recordedBoxPositions.isNotEmpty()) {
-                val avgX = recordedBoxPositions.sumOf { it.x } / recordedBoxPositions.size
-                val avgY = recordedBoxPositions.sumOf { it.y } / recordedBoxPositions.size
-                val avgZ = recordedBoxPositions.sumOf { it.z } / recordedBoxPositions.size
-                Vec3(avgX, avgY, avgZ)
+            // 8. Resting Position:
+            // If no blood mob in queue:
+            // - If you killed mobs on the ground, aim somewhere in the area (the average position)
+            // - Otherwise, set the resting position to the last spawned blood mob position
+            val restingTarget: Vec3 = if (hasKilledGroundMobs) {
+                val allPositions = (recordedGroundMobPositions + recordedBoxPositions)
+                if (allPositions.isNotEmpty()) {
+                    val avgX = allPositions.sumOf { it.x } / allPositions.size
+                    val avgY = allPositions.sumOf { it.y } / allPositions.size
+                    val avgZ = allPositions.sumOf { it.z } / allPositions.size
+                    Vec3(avgX, avgY, avgZ)
+                } else {
+                    Vec3(roomCenterPos.x + 0.5, 71.0, roomCenterPos.z + 0.5)
+                }
+            } else if (lastSpawnedMobPosition != null) {
+                lastSpawnedMobPosition!!
+            } else if (recordedBoxPositions.isNotEmpty()) {
+                recordedBoxPositions.last()
             } else {
                 Vec3(roomCenterPos.x + 0.5, 71.0, roomCenterPos.z + 0.5)
             }
@@ -486,6 +510,9 @@ object AutoBloodCamp : Module {
         savedWeaponSlot = null
         recordedSpawnLocations.clear()
         recordedBoxPositions.clear()
+        recordedGroundMobPositions.clear()
+        lastSpawnedMobPosition = null
+        hasKilledGroundMobs = false
         PathfindingUtils.stopMovement()
         MouseRotationHelper.clearTarget()
     }
