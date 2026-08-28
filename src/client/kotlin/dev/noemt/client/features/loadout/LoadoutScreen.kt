@@ -10,13 +10,20 @@ import net.minecraft.client.renderer.RenderPipelines
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.core.component.DataComponents
 import net.minecraft.core.registries.BuiltInRegistries
+import net.minecraft.nbt.TagParser
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.Identifier
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.item.Item
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
+import net.minecraft.world.item.component.CustomData
+import net.minecraft.world.item.component.DyedItemColor
 import net.minecraft.world.item.component.ItemLore
+import net.minecraft.world.item.component.ResolvableProfile
+import com.mojang.authlib.GameProfile
+import com.mojang.authlib.properties.Property
+import java.util.UUID
 
 class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
     private val mc: Minecraft get() = Minecraft.getInstance()
@@ -239,6 +246,72 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
         }
     }
 
+    private fun getLoadoutItemStack(lo: Loadout, defaultSlotNum: Int, isSelected: Boolean, targetName: String): ItemStack {
+        val baseItem = getLoadoutItem(lo, defaultSlotNum)
+        val stack = ItemStack(baseItem, 1)
+
+        // Set Custom Name
+        stack.set(DataComponents.CUSTOM_NAME, Component.literal("§aLoadout #$defaultSlotNum: §f${lo.name}"))
+
+        // Set Full Custom Data (NBT) if available
+        if (!lo.nbtString.isNullOrBlank()) {
+            try {
+                val tag = TagParser.parseCompoundFully(lo.nbtString!!)
+                stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag))
+            } catch (e: Exception) {}
+        }
+
+        // Set Skull Profile / Texture if available
+        if (!lo.skullTexture.isNullOrBlank()) {
+            try {
+                val profile = GameProfile(UUID.randomUUID(), "")
+                profile.properties.put("textures", Property("textures", lo.skullTexture!!))
+                stack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile))
+            } catch (e: Exception) {}
+        }
+
+        // Set Dyed Color if available
+        if (lo.dyedColor != null) {
+            stack.set(DataComponents.DYED_COLOR, DyedItemColor(lo.dyedColor!!))
+        }
+
+        // Build Rich Lore
+        val fullLore = mutableListOf<String>()
+        fullLore.add("§7Loadout Slot: §fSlot $defaultSlotNum")
+        if (!lo.petName.isNullOrBlank()) {
+            fullLore.add("§7Active Pet: §6${lo.petName}")
+        }
+
+        // Include original synced SkyBlock armor lore lines if present
+        if (lo.loreLines.isNotEmpty()) {
+            fullLore.add("")
+            for (line in lo.loreLines) {
+                if (line.contains("Click to equip", ignoreCase = true) || line.contains("Equipped", ignoreCase = true)) continue
+                fullLore.add(line)
+            }
+        }
+
+        fullLore.add("")
+        if (isSelected) {
+            fullLore.add("§a✓ Currently Assigned for $targetName")
+        }
+        if (LoadoutManager.currentLoadoutId == lo.id) {
+            fullLore.add("§b● Currently Equipped In-Game")
+        }
+
+        fullLore.add("")
+        fullLore.add("§eLeft-Click: §fSelect this loadout")
+        fullLore.add("§bRight-Click: §fEquip this loadout now")
+
+        stack.set(DataComponents.LORE, ItemLore(fullLore.map { Component.literal(it) }))
+
+        if (isSelected || lo.hasGlint || LoadoutManager.currentLoadoutId == lo.id) {
+            stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+        }
+
+        return stack
+    }
+
     private fun getAssignedLoadoutName(target: ConfigTarget): String? {
         return when (target) {
             ConfigTarget.TOGGLE_A -> LoadoutManager.loadoutAId.takeIf { it.isNotBlank() }?.let { LoadoutManager.loadouts[it]?.name ?: it }
@@ -411,37 +484,8 @@ class LoadoutScreen : Screen(Component.literal("Auto Loadout Swapper")) {
             val id = "loadout_$loadoutNum"
             val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $loadoutNum", loadoutSlot = loadoutNum)
             val isSelected = assigned == lo.name || assigned == id
-            val isCurrentlyEquipped = LoadoutManager.currentLoadoutId == lo.id
 
-            val lore = mutableListOf(
-                "§7Loadout Slot: §fSlot $loadoutNum"
-            )
-
-            if (!lo.petName.isNullOrBlank()) {
-                lore.add("§7Active Pet: §6${lo.petName}")
-            }
-
-            lore.add("")
-
-            if (isSelected) {
-                lore.add("§a✓ Currently Assigned for ${target.displayName}")
-            }
-            if (isCurrentlyEquipped) {
-                lore.add("§b● Currently Equipped In-Game")
-            }
-
-            lore.add("")
-            lore.add("§eLeft-Click: §fSelect this loadout")
-            lore.add("§bRight-Click: §fEquip this loadout now")
-
-            val iconItem = getLoadoutItem(lo, loadoutNum)
-
-            return createItem(
-                iconItem,
-                "§aLoadout #$loadoutNum: §f${lo.name}",
-                lore,
-                glint = isSelected || isCurrentlyEquipped
-            )
+            return getLoadoutItemStack(lo, loadoutNum, isSelected, target.displayName)
         }
 
         // Controls

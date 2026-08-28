@@ -273,6 +273,9 @@ data class Loadout(
     var petName: String? = null,
     var itemType: String? = null,
     var skullTexture: String? = null,
+    var nbtString: String? = null,
+    var dyedColor: Int? = null,
+    var hasGlint: Boolean = false,
     var loreLines: List<String> = emptyList(),
     var slot: Int? = null, // Hotbar slot (0..8)
     var commands: MutableList<String> = mutableListOf(),

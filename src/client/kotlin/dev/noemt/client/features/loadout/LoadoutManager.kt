@@ -454,10 +454,13 @@ object LoadoutManager {
             val id = "loadout_$loadoutNum"
             val existing = loadouts[id]
 
-            // Extract item registry key, skull texture, and lore lines
+            // Extract item registry key, skull texture, full NBT, dyed color, glint, and lore lines
             val itemKey = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.item).toString()
             val skull = ItemUtils.getSkullTexture(item)
             val lore = ItemUtils.run { item.lore }
+            val rawNbt = ItemUtils.run { item.customData }.takeUnless { it.isEmpty }?.toString()
+            val dyedColor = item.get(net.minecraft.core.component.DataComponents.DYED_COLOR)?.rgb()
+            val hasGlint = item.hasFoil() || item.isEnchanted
             val petLine = lore.find { it.contains("Pet:", ignoreCase = true) }
             val extractedPet = petLine?.removeFormatting()?.substringAfter("Pet:")?.trim()?.takeIf { it.isNotBlank() }
 
@@ -467,6 +470,9 @@ object LoadoutManager {
                 existing.openCommand = "/loadouts"
                 existing.itemType = itemKey
                 existing.skullTexture = skull
+                existing.nbtString = rawNbt
+                existing.dyedColor = dyedColor
+                existing.hasGlint = hasGlint
                 existing.loreLines = lore
                 if (extractedPet != null) existing.petName = extractedPet
             } else {
@@ -477,6 +483,9 @@ object LoadoutManager {
                     openCommand = "/loadouts",
                     itemType = itemKey,
                     skullTexture = skull,
+                    nbtString = rawNbt,
+                    dyedColor = dyedColor,
+                    hasGlint = hasGlint,
                     loreLines = lore,
                     petName = extractedPet,
                     slot = if (index < 9) index else null
