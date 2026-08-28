@@ -49,13 +49,14 @@ object ScoreboardUtils {
     }
 
     fun detectGameInstance(): Pair<GameInstanceType, String>? {
-        val area = getSkyblockArea()
+        val area = getSkyblockArea() ?: return null
         val lines = getSidebarLines()
-        val allText = (lines + (area ?: "")).joinToString(" ").uppercase()
+        val allText = (listOf(area) + lines).joinToString(" ").uppercase()
 
         for (instance in GameInstanceType.values()) {
+            if (instance.negativeKeywords.any { allText.contains(it) }) continue
             if (instance.keywords.any { allText.contains(it) }) {
-                return instance to (area ?: instance.displayName)
+                return instance to area
             }
         }
         return null

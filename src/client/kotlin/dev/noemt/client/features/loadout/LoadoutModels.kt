@@ -2,6 +2,7 @@ package dev.noemt.client.features.loadout
 
 import com.google.gson.*
 import com.google.gson.reflect.TypeToken
+import dev.noemt.client.utils.LocationUtils
 import net.minecraft.world.entity.Entity
 import java.lang.reflect.Type
 
@@ -29,22 +30,27 @@ enum class CompositeMode {
     OR
 }
 
-enum class GameInstanceType(val displayName: String, val keywords: List<String>) {
-    DUNGEONS("The Catacombs", listOf("CATACOMBS", "DUNGEON")),
-    DUNGEON_BOSS("Dungeon Boss Room", listOf("BOSS")),
+enum class GameInstanceType(
+    val displayName: String,
+    val keywords: List<String>,
+    val negativeKeywords: List<String> = emptyList()
+) {
+    DUNGEONS("The Catacombs", listOf("CATACOMBS (", "THE CATACOMBS"), listOf("DUNGEON HUB", "HUB")),
+    DUNGEON_BOSS("Dungeon Boss Room", listOf("BOSS ROOM", "CATACOMBS BOSS")),
+    DUNGEON_HUB("Dungeon Hub", listOf("DUNGEON HUB")),
     KUUDRA("Kuudra Arena", listOf("KUUDRA")),
-    CRIMSON_ISLE("Crimson Isle", listOf("CRIMSON", "ISLE")),
+    CRIMSON_ISLE("Crimson Isle", listOf("CRIMSON ISLE", "CRIMSON"), listOf("KUUDRA")),
     THE_END("The End", listOf("THE END", "DRAGON'S NEST")),
-    GARDEN("The Garden", listOf("GARDEN", "BARN")),
-    DWARVEN_MINES("Dwarven Mines", listOf("DWARVEN", "MINES")),
-    CRYSTAL_HOLLOWS("Crystal Hollows", listOf("CRYSTAL", "HOLLOWS")),
-    MINESHAFT("Glacite Mineshafts", listOf("MINESHAFT")),
-    THE_PARK("The Park", listOf("PARK", "SPRUCE", "THICKET")),
-    SPIDER_DEN("Spider's Den", listOf("SPIDER")),
-    THE_RIFT("The Rift", listOf("RIFT")),
+    GARDEN("The Garden", listOf("THE GARDEN", "GARDEN", "BARN")),
+    DWARVEN_MINES("Dwarven Mines", listOf("DWARVEN MINES", "DWARVEN")),
+    CRYSTAL_HOLLOWS("Crystal Hollows", listOf("CRYSTAL HOLLOWS")),
+    MINESHAFT("Glacite Mineshafts", listOf("MINESHAFT", "GLACITE")),
+    THE_PARK("The Park", listOf("THE PARK", "SPRUCE WOODS", "DARK THICKET")),
+    SPIDER_DEN("Spider's Den", listOf("SPIDER'S DEN", "SPIDERS DEN")),
+    THE_RIFT("The Rift", listOf("THE RIFT")),
     DARK_AUCTION("Dark Auction", listOf("DARK AUCTION")),
-    WINTER("Jerry's Workshop", listOf("JERRY", "WINTER")),
-    HUB("Hub", listOf("HUB", "VILLAGE")),
+    WINTER("Jerry's Workshop", listOf("JERRY'S WORKSHOP", "WINTER")),
+    HUB("Hub", listOf("VILLAGE", "THE HUB"), listOf("DUNGEON HUB")),
     PRIVATE_ISLAND("Private Island", listOf("PRIVATE ISLAND", "YOUR ISLAND"))
 }
 
@@ -58,6 +64,7 @@ sealed class LoadoutCondition {
         override fun matches(context: ConditionContext): Boolean {
             val loc = context.location ?: return false
             val locUpper = loc.uppercase()
+            if (instanceType.negativeKeywords.any { locUpper.contains(it) }) return false
             return instanceType.keywords.any { locUpper.contains(it) }
         }
     }
@@ -66,6 +73,7 @@ sealed class LoadoutCondition {
         val autoRevertOnKill: Boolean = true
     ) : LoadoutCondition() {
         override fun matches(context: ConditionContext): Boolean {
+            if (!LocationUtils.inDungeon) return false
             val target = context.aimedEntity ?: return false
             return MobMatcher.matches(target, MobCategory.MINIBOSS)
         }
