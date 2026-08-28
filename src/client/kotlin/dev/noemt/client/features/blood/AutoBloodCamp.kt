@@ -220,9 +220,9 @@ object AutoBloodCamp : Module {
 
             fun isWatcher(entity: LivingEntity): Boolean {
                 if (entity == BloodCamp.watcherEntity) return true
-                if (entity is Zombie && entity.y > 72.0) return true
-                val name = entity.customName?.string ?: (entity as? Player)?.gameProfile?.name ?: ""
-                if (name.contains("Watcher", ignoreCase = true)) return true
+                val name = entity.customName?.string?.removeFormatting() ?: (entity as? Player)?.gameProfile?.name ?: ""
+                if (name.contains("The Watcher", ignoreCase = true) || name.equals("Watcher", ignoreCase = true)) return true
+                if (entity is Zombie && entity.y > 78.0) return true
                 return false
             }
 
@@ -318,7 +318,7 @@ object AutoBloodCamp : Module {
                 isInsideBloodRoom(entity.position())
             }.sortedWith(
                 compareByDescending<LivingEntity> {
-                    player.hasLineOfSight(it) || PathfindingUtils.hasLineOfSight(player.eyePosition, it.eyePosition)
+                    player.hasLineOfSight(it) || PathfindingUtils.hasLineOfSight(player.eyePosition, it.boundingBox.center)
                 }.thenBy {
                     player.distanceToSqr(it)
                 }
@@ -335,42 +335,19 @@ object AutoBloodCamp : Module {
             // 5. Target & Attack Alive Ground Mobs in Blood Room (Highest Priority when mobs are alive)
             if (livingMobs.isNotEmpty()) {
                 val targetEntity = livingMobs.first()
-                val targetVec = targetEntity.eyePosition
+                val targetVec = targetEntity.boundingBox.center
                 val dist = player.distanceTo(targetEntity)
-                val hasLos = player.hasLineOfSight(targetEntity) || PathfindingUtils.hasLineOfSight(player.eyePosition, targetVec)
 
-                if (dist <= maxRange && hasLos) {
-                    if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
-                        PathfindingUtils.stopMovement()
-                    }
-                    MouseRotationHelper.setTarget(targetVec, config.autoBloodAimSpeed)
+                if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
+                    PathfindingUtils.stopMovement()
+                }
 
-                    if (MouseRotationHelper.isAimingAt(targetVec, 8.0f) || dist < 4.5) {
-                        tryAttack(targetEntity)
-                    }
-                } else if (!isEvadingTnt) {
-                    val now = System.currentTimeMillis()
-                    val walkShootPos = PathfindingUtils.findBestShootingPosition(targetVec, tntPositions)
-                    val walkDist = walkShootPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
+                // Aim directly at the mob's center
+                MouseRotationHelper.setTarget(targetVec, config.autoBloodAimSpeed)
 
-                    if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && now - lastAotvTime > 500) {
-                        val shootPos = PathfindingUtils.findAotvShootingPosition(targetVec, tntPositions)
-                        if (shootPos != null) {
-                            val targetPoint = Vec3(shootPos.x + 0.5, shootPos.y + 0.95, shootPos.z + 0.5)
-                            MouseRotationHelper.setTarget(targetPoint, config.autoBloodAimSpeed)
-                            if (MouseRotationHelper.isAimingAt(targetPoint, 4.5f)) {
-                                lastAotvTime = now
-                                teleportPauseTicks = 14
-                                AOTVHelper.castTeleport(preferredSlot)
-                            }
-                            return@register
-                        }
-                    }
-
-                    if (walkShootPos != null) {
-                        val shootVec = Vec3(walkShootPos.x + 0.5, walkShootPos.y + 1.0, walkShootPos.z + 0.5)
-                        PathfindingUtils.moveTo(shootVec, sprint = false)
-                    }
+                // Attack at full CPS whenever aimed towards mob (14 degree tolerance) or in close range
+                if (MouseRotationHelper.isAimingAt(targetVec, 14.0f) || dist < 6.0) {
+                    tryAttack(targetEntity)
                 }
                 return@register
             }

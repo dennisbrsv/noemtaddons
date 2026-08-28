@@ -60,7 +60,7 @@ object PlayerUtils {
 
     fun attackEntity(entity: net.minecraft.world.entity.Entity? = null) {
         val player = mc.player ?: return
-        if (entity != null && player.distanceTo(entity) <= 4.5) {
+        if (entity != null && player.distanceTo(entity) <= 5.5) {
             mc.gameMode?.attack(player, entity)
         }
         player.swing(InteractionHand.MAIN_HAND)
