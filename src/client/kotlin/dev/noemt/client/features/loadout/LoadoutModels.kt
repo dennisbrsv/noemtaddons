@@ -26,16 +26,23 @@ enum class CompositeMode {
     OR
 }
 
-enum class GameInstanceType {
-    DUNGEONS,
-    DUNGEON_BOSS,
-    KUUDRA,
-    CRIMSON_ISLE,
-    THE_END,
-    MINING,
-    GARDEN,
-    HUB,
-    PRIVATE_ISLAND
+enum class GameInstanceType(val displayName: String, val keywords: List<String>) {
+    DUNGEONS("The Catacombs", listOf("CATACOMBS", "DUNGEON")),
+    DUNGEON_BOSS("Dungeon Boss Room", listOf("BOSS")),
+    KUUDRA("Kuudra Arena", listOf("KUUDRA")),
+    CRIMSON_ISLE("Crimson Isle", listOf("CRIMSON", "ISLE")),
+    THE_END("The End", listOf("THE END", "DRAGON'S NEST")),
+    GARDEN("The Garden", listOf("GARDEN", "BARN")),
+    DWARVEN_MINES("Dwarven Mines", listOf("DWARVEN", "MINES")),
+    CRYSTAL_HOLLOWS("Crystal Hollows", listOf("CRYSTAL", "HOLLOWS")),
+    MINESHAFT("Glacite Mineshafts", listOf("MINESHAFT")),
+    THE_PARK("The Park", listOf("PARK", "SPRUCE", "THICKET")),
+    SPIDER_DEN("Spider's Den", listOf("SPIDER")),
+    THE_RIFT("The Rift", listOf("RIFT")),
+    DARK_AUCTION("Dark Auction", listOf("DARK AUCTION")),
+    WINTER("Jerry's Workshop", listOf("JERRY", "WINTER")),
+    HUB("Hub", listOf("HUB", "VILLAGE")),
+    PRIVATE_ISLAND("Private Island", listOf("PRIVATE ISLAND", "YOUR ISLAND"))
 }
 
 sealed class LoadoutCondition {
@@ -48,17 +55,16 @@ sealed class LoadoutCondition {
         override fun matches(context: ConditionContext): Boolean {
             val loc = context.location ?: return false
             val locUpper = loc.uppercase()
-            return when (instanceType) {
-                GameInstanceType.DUNGEONS -> locUpper.contains("CATACOMBS") || locUpper.contains("DUNGEON")
-                GameInstanceType.DUNGEON_BOSS -> locUpper.contains("BOSS")
-                GameInstanceType.KUUDRA -> locUpper.contains("KUUDRA")
-                GameInstanceType.CRIMSON_ISLE -> locUpper.contains("CRIMSON")
-                GameInstanceType.THE_END -> locUpper.contains("THE END") || locUpper.contains("DRAGON")
-                GameInstanceType.MINING -> locUpper.contains("MINES") || locUpper.contains("HOLLOWS") || locUpper.contains("DWARVEN")
-                GameInstanceType.GARDEN -> locUpper.contains("GARDEN") || locUpper.contains("FARM")
-                GameInstanceType.HUB -> locUpper.contains("HUB") || locUpper.contains("VILLAGE")
-                GameInstanceType.PRIVATE_ISLAND -> locUpper.contains("ISLAND")
-            }
+            return instanceType.keywords.any { locUpper.contains(it) }
+        }
+    }
+
+    data class MinibossCondition(
+        val autoRevertOnKill: Boolean = true
+    ) : LoadoutCondition() {
+        override fun matches(context: ConditionContext): Boolean {
+            val target = context.aimedEntity ?: return false
+            return MobMatcher.matches(target, MobCategory.MINIBOSS)
         }
     }
 

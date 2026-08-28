@@ -48,14 +48,42 @@ object LoadoutModule : Module {
             }
         }
 
-        // 2. Chat Message Trigger
+        // 2. Chat Message Trigger & Miniboss Kill Detection
         register<ChatMessageEvent> {
             if (!ConfigManager.config.loadout.enabled) return@register
             val text = event.unformattedText
+
+            // Check Miniboss Kill to Auto-Revert Loadout
+            if (LoadoutManager.inMinibossFight) {
+                if (text.contains("was slain", ignoreCase = true) ||
+                    text.contains("was defeated", ignoreCase = true) ||
+                    text.contains("was killed", ignoreCase = true) ||
+                    text.contains("You killed", ignoreCase = true)
+                ) {
+                    val activeName = LoadoutManager.activeMinibossName
+                    if (activeName == null || text.contains(activeName, ignoreCase = true) ||
+                        text.contains("Shadow Assassin", ignoreCase = true) ||
+                        text.contains("Lost Adventurer", ignoreCase = true) ||
+                        text.contains("Frozen Adventurer", ignoreCase = true) ||
+                        text.contains("Angry Archaeologist", ignoreCase = true) ||
+                        text.contains("King Midas", ignoreCase = true)
+                    ) {
+                        LoadoutManager.onMinibossKilled(text)
+                    }
+                }
+            }
+
             LoadoutManager.checkConditions(ConditionContext(chatMessage = text))
         }
 
-        // 3. Dungeon Entry & State Triggers
+        // 3. Player Death Reset
+        register<dev.noemt.client.event.impl.DungeonEvent.PlayerDeathEvent> {
+            if (event.name == mc.user.name) {
+                LoadoutManager.onPlayerDeath()
+            }
+        }
+
+        // 4. Dungeon Entry & State Triggers
         register<dev.noemt.client.event.impl.DungeonEvent.RunStatedEvent> {
             if (!ConfigManager.config.loadout.enabled) return@register
             LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs"))

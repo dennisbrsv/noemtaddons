@@ -46,6 +46,17 @@ object LoadoutManager {
     var loadoutAId: String = "loadout_1"
     var loadoutBId: String = "loadout_2"
 
+    // Live UI reactivity listener
+    var onDataChanged: (() -> Unit)? = null
+
+    // Miniboss Fight Tracking
+    var inMinibossFight: Boolean = false
+        private set
+    var minibossRevertLoadoutId: String? = null
+        private set
+    var activeMinibossName: String? = null
+        private set
+
     // State tracking for in-menu detection
     var inLoadoutMenu: Boolean = false
         private set
@@ -86,8 +97,43 @@ object LoadoutManager {
     }
 
     fun swapToPrevious() {
-        val target = previousLoadoutId ?: loadoutAId
-        swapTo(target, "Swap Back Keybind (Last Loadout)")
+        val target = previousLoadoutId
+        if (target == null || target == currentLoadoutId) {
+            ChatUtils.modMessage("&e[Loadout] No previous loadout recorded.")
+            return
+        }
+        val targetName = loadouts[target]?.name ?: target
+        swapTo(target, "Revert (Last Equipped: $targetName)")
+    }
+
+    fun onMinibossEngaged(targetLoadoutId: String, minibossName: String) {
+        if (inMinibossFight) return
+        inMinibossFight = true
+        minibossRevertLoadoutId = currentLoadoutId
+        activeMinibossName = minibossName
+        swapTo(targetLoadoutId, "Miniboss Encounter: $minibossName")
+    }
+
+    fun onMinibossKilled(reason: String = "Defeated") {
+        if (!inMinibossFight) return
+        inMinibossFight = false
+        val revertId = minibossRevertLoadoutId ?: previousLoadoutId
+        val mbName = activeMinibossName ?: "Miniboss"
+        minibossRevertLoadoutId = null
+        activeMinibossName = null
+
+        if (revertId != null && revertId != currentLoadoutId) {
+            ChatUtils.modMessage("&b[Loadout] &a$mbName slain! Auto-swapping back to previous loadout...")
+            swapTo(revertId, "Miniboss Slain ($reason)")
+        }
+    }
+
+    fun onPlayerDeath() {
+        if (inMinibossFight) {
+            inMinibossFight = false
+            minibossRevertLoadoutId = null
+            activeMinibossName = null
+        }
     }
 
     fun swapTo(id: String, reason: String = "Manual", force: Boolean = false) {
@@ -234,6 +280,7 @@ object LoadoutManager {
             if (existing != null) {
                 existing.name = rawName
                 existing.loadoutSlot = loadoutNum
+                existing.openCommand = "/loadouts"
             } else {
                 loadouts[id] = Loadout(
                     id = id,
@@ -249,6 +296,7 @@ object LoadoutManager {
         if (syncedCount > 0) {
             saveData()
             ChatUtils.modMessage("&b[Loadout] &aAuto-synced &e$syncedCount &aloadouts from SkyBlock /loadouts menu!")
+            notifyDataChanged()
         }
     }
 
@@ -308,7 +356,16 @@ object LoadoutManager {
 
             if (rule.condition.matches(context)) {
                 rule.lastTriggeredMs = now
-                swapTo(target, "Rule: ${rule.name}")
+
+                // Check for Miniboss Auto-Revert Handling
+                val cond = rule.condition
+                if (cond is LoadoutCondition.MinibossCondition ||
+                    (cond is LoadoutCondition.AimCondition && cond.mobCategory == MobCategory.MINIBOSS)) {
+                    val entityName = context.aimedEntity?.let { MobMatcher.getAllEntityNames(it).firstOrNull() } ?: "Miniboss"
+                    onMinibossEngaged(target, entityName)
+                } else {
+                    swapTo(target, "Rule: ${rule.name}")
+                }
                 break
             }
         }
@@ -317,6 +374,7 @@ object LoadoutManager {
     fun addOrUpdateLoadout(loadout: Loadout) {
         loadouts[loadout.id] = loadout
         saveData()
+        notifyDataChanged()
     }
 
     fun removeLoadout(id: String): Boolean {
@@ -324,6 +382,7 @@ object LoadoutManager {
         if (removed) {
             rules.removeIf { it.targetLoadoutId == id }
             saveData()
+            notifyDataChanged()
         }
         return removed
     }
@@ -332,12 +391,22 @@ object LoadoutManager {
         rules.removeIf { it.id == rule.id }
         rules.add(rule)
         saveData()
+        notifyDataChanged()
     }
 
     fun removeRule(id: String): Boolean {
         val removed = rules.removeIf { it.id == id }
-        if (removed) saveData()
+        if (removed) {
+            saveData()
+            notifyDataChanged()
+        }
         return removed
+    }
+
+    private fun notifyDataChanged() {
+        mc.execute {
+            onDataChanged?.invoke()
+        }
     }
 
     private fun setupDefaults() {
@@ -359,6 +428,17 @@ object LoadoutManager {
         }
 
         // Default Rules
+        rules.add(
+            LoadoutRule(
+                id = "aim_miniboss",
+                name = "Miniboss Auto-Swap (Auto-Reverts on Kill)",
+                enabled = true,
+                targetLoadoutId = "loadout_2",
+                condition = LoadoutCondition.MinibossCondition(autoRevertOnKill = true),
+                cooldownSeconds = 3.0
+            )
+        )
+
         rules.add(
             LoadoutRule(
                 id = "aim_blood_mobs",
@@ -383,23 +463,12 @@ object LoadoutManager {
 
         rules.add(
             LoadoutRule(
-                id = "aim_miniboss",
-                name = "Aimed at Miniboss",
+                id = "join_dungeon",
+                name = "Join Catacombs ➜ Loadout 1 (Clear)",
                 enabled = true,
-                targetLoadoutId = "loadout_2",
-                condition = LoadoutCondition.AimCondition(mobCategory = MobCategory.MINIBOSS),
-                cooldownSeconds = 3.0
-            )
-        )
-
-        rules.add(
-            LoadoutRule(
-                id = "boss_chat_alert",
-                name = "Boss Dialogue Trigger",
-                enabled = true,
-                targetLoadoutId = "loadout_2",
-                condition = LoadoutCondition.ChatCondition(pattern = "[BOSS] ", matchType = MatchType.CONTAINS),
-                cooldownSeconds = 4.0
+                targetLoadoutId = "loadout_1",
+                condition = LoadoutCondition.GameInstanceCondition(instanceType = GameInstanceType.DUNGEONS),
+                cooldownSeconds = 5.0
             )
         )
     }
