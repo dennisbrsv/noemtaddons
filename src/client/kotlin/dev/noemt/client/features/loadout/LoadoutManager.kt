@@ -146,8 +146,7 @@ object LoadoutManager {
         when (currentStage) {
             SwapStage.PRE_CMD_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    val cmd = loadout.openCommand.takeIf { it.isNotBlank() } ?: "/loadouts"
-                    sendClientCommand(cmd)
+                    sendClientCommand("/loadouts")
 
                     guiWaitTimeoutMs = now + 2500L
                     currentStage = SwapStage.WAITING_GUI_OPEN
@@ -412,7 +411,10 @@ object LoadoutManager {
                 val loaded: Map<String, Loadout>? = gson.fromJson(configFile.readText(), type)
                 if (loaded != null) {
                     loadouts.clear()
-                    loadouts.putAll(loaded)
+                    for ((k, v) in loaded) {
+                        v.openCommand = "/loadouts"
+                        loadouts[k] = v
+                    }
                 }
             }
         } catch (e: Exception) {
