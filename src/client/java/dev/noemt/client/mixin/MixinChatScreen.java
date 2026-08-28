@@ -9,6 +9,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public abstract class MixinChatScreen {
     @Redirect(method = "handleChatInput", at = @At(value = "INVOKE", target = "Ljava/lang/String;startsWith(Ljava/lang/String;)Z"))
     private boolean onStartsWith(String instance, String prefix) {
-        return instance.startsWith("/") || instance.startsWith("&");
+        return instance.startsWith("/") || instance.startsWith("$") || instance.startsWith("&");
     }
 }

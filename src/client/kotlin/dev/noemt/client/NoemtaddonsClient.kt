@@ -212,7 +212,7 @@ object NoemtaddonsClient : ClientModInitializer {
                         if (dev.noemt.client.features.misc.StalkFeature.targetName != null) {
                             dev.noemt.client.features.misc.StalkFeature.stop()
                         } else {
-                            ChatUtils.modMessage("&eUsage: &b&stalk <ign>&e or &b&stalk stop")
+                            ChatUtils.modMessage("&eUsage: &b\$stalk <ign>&e or &b\$stalk stop")
                         }
                         1
                     }
@@ -269,7 +269,7 @@ object NoemtaddonsClient : ClientModInitializer {
                                 }
                         )
                         .executes {
-                            ChatUtils.modMessage("&eUsage: &b&$pCmd <x> <y> <z>&e, &b&$pCmd <ign>&e, or &b&$pCmd stop")
+                            ChatUtils.modMessage("&eUsage: &b\$$pCmd <x> <y> <z>&e, &b\$$pCmd <ign>&e, or &b\$$pCmd stop")
                             1
                         }
                 )

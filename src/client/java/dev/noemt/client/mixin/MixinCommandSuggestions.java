@@ -11,7 +11,7 @@ public abstract class MixinCommandSuggestions {
     @Redirect(method = "updateCommandInfo", at = @At(value = "INVOKE", target = "Lcom/mojang/brigadier/StringReader;peek()C", remap = false))
     private char onPeek(StringReader reader) {
         char c = reader.peek();
-        if (c == '&') {
+        if (c == '$' || c == '&') {
             return '/';
         }
         return c;

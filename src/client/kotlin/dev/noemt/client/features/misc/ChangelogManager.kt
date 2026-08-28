@@ -83,16 +83,17 @@ object ChangelogManager : Module {
     }
 
     private fun getDefaultChangelog(): String {
+        val s = "$"
         return """
             §b§lNoemtAddons v1.0.0 (${BuildConstants.buildDisplayName})
             
             §e• Modern 26.1.2 Fabric Port
             §7  Fully ported and optimized for Minecraft 26.1.2.
             
-            §e• Custom & Command Prefix
-            §7  Use & instead of / with full native autocompletion.
+            §e• Custom $s Command Prefix
+            §7  Use $s instead of / with full native autocompletion.
             
-            §e• Player Stalker (&stalk {ign})
+            §e• Player Stalker (${s}stalk {ign})
             §7  Real-time 3D tracer line & player bounding box highlight.
             
             §e• SkyHanni Pathfinder Engine
@@ -128,7 +129,7 @@ object ChangelogManager : Module {
         val button = Component.literal("§6§l[Click to View Changelog]")
             .withStyle(
                 Style.EMPTY
-                    .withClickEvent(ClickEvent.RunCommand("&noemt changelog"))
+                    .withClickEvent(ClickEvent.RunCommand("\$noemt changelog"))
                     .withHoverEvent(HoverEvent.ShowText(Component.literal("§eClick to open the in-game changelog viewer!")))
             )
 
