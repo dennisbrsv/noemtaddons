@@ -73,11 +73,9 @@ object ChatUtils {
         while (i < len) {
             val c = this[i]
             if ((c == '§' || c == '&') && i + 1 < len) {
-                val next = this[i + 1]
-                if (next in '0'..'9' || next in 'a'..'f' || next in 'A'..'F' || next in 'k'..'o' || next in 'K'..'O' || next == 'r' || next == 'R') {
-                    i += 2
-                    continue
-                }
+                // Strip all Minecraft formatting and Hypixel scoreboard unique keys
+                i += 2
+                continue
             }
             out[outPos++] = c
             i++

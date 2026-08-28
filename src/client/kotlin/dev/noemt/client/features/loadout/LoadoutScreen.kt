@@ -4,6 +4,7 @@ import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.ui.core.GuiTheme
 import dev.noemt.client.ui.core.NoemtScreen
 import dev.noemt.client.ui.dsl.UiBuilder
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.network.chat.Component
@@ -14,17 +15,65 @@ class LoadoutScreen : NoemtScreen(
     windowTitle = "§b§lNoemtAddons §8• §fAuto Loadout Swapper §c[CHEAT]",
     windowSubtitle = "§7Toggle: §e[V] §7• Revert: §e[B] §7(Last Set) • Auto-Reverts on Miniboss Kill",
     widthRatio = 0.94f,
-    heightRatio = 0.88f,
-    minWidth = 560f,
-    maxWidth = 920f
+    heightRatio = 0.92f,
+    minWidth = 640f,
+    maxWidth = 980f
 ) {
     // Builder State
     private var builderTriggerType = "INSTANCE" // "INSTANCE", "MINIBOSS", "AIM", "CHAT"
-    private var builderGameInstance = GameInstanceType.DUNGEONS
-    private var builderMobCategory = MobCategory.BLOOD_MOB
+    private var selectedInstanceCategory = "DUNGEONS" // "DUNGEONS", "NETHER", "MINING", "OVERWORLD", "SPECIAL"
+    private var selectedGameInstance = GameInstanceType.DUNGEONS
+    private var selectedMobCategory = MobCategory.BLOOD_MOB
     private var builderTargetSlot = 1
     private var chatPatternBox: EditBox? = null
     private var cooldownBox: EditBox? = null
+
+    // Instance Categories
+    private val instanceCategories = listOf(
+        "DUNGEONS" to "🏰 Dungeons",
+        "NETHER" to "🔥 Nether",
+        "MINING" to "⛏️ Mining",
+        "OVERWORLD" to "🌲 Overworld",
+        "SPECIAL" to "🌌 Special"
+    )
+
+    private val categoryInstances = mapOf(
+        "DUNGEONS" to listOf(
+            GameInstanceType.DUNGEONS to "The Catacombs",
+            GameInstanceType.DUNGEON_BOSS to "Dungeon Boss",
+            GameInstanceType.DUNGEON_HUB to "Dungeon Hub"
+        ),
+        "NETHER" to listOf(
+            GameInstanceType.CRIMSON_ISLE to "Crimson Isle",
+            GameInstanceType.KUUDRA to "Kuudra Arena"
+        ),
+        "MINING" to listOf(
+            GameInstanceType.DWARVEN_MINES to "Dwarven Mines",
+            GameInstanceType.CRYSTAL_HOLLOWS to "Crystal Hollows",
+            GameInstanceType.MINESHAFT to "Glacite Mineshafts"
+        ),
+        "OVERWORLD" to listOf(
+            GameInstanceType.HUB to "Hub / Village",
+            GameInstanceType.GARDEN to "The Garden",
+            GameInstanceType.THE_PARK to "The Park",
+            GameInstanceType.SPIDER_DEN to "Spider's Den",
+            GameInstanceType.THE_END to "The End / Dragons"
+        ),
+        "SPECIAL" to listOf(
+            GameInstanceType.THE_RIFT to "The Rift",
+            GameInstanceType.DARK_AUCTION to "Dark Auction",
+            GameInstanceType.WINTER to "Jerry's Workshop",
+            GameInstanceType.PRIVATE_ISLAND to "Private Island"
+        )
+    )
+
+    private val mobCategories = listOf(
+        MobCategory.BLOOD_MOB to "🩸 Blood Mobs",
+        MobCategory.WATCHER to "👁️ The Watcher",
+        MobCategory.MINIBOSS to "⚔️ Miniboss",
+        MobCategory.BOSS to "👑 Floor Boss",
+        MobCategory.SLAYER to "💀 Slayer Boss"
+    )
 
     // Scroll Offsets
     private var scrollOffsetLeft = 0
@@ -32,9 +81,13 @@ class LoadoutScreen : NoemtScreen(
 
     override fun added() {
         super.added()
-        // Register Live Auto-Refresh Listener
+        // Register Live Auto-Refresh Listener safely deferred to next tick
         LoadoutManager.onDataChanged = {
-            init()
+            Minecraft.getInstance().execute {
+                if (Minecraft.getInstance().screen == this) {
+                    init()
+                }
+            }
         }
     }
 
@@ -51,7 +104,7 @@ class LoadoutScreen : NoemtScreen(
         val rightX = leftX + colWidth + 12
 
         // Top SkyBlock Sync Button
-        ui.button("⚡ Sync SkyBlock (/loadouts)", windowX + windowWidth - 255, windowY + 8, 175, 20) {
+        ui.button("⚡ Sync SkyBlock (/loadouts)", windowX + windowWidth - 235, windowY + 8, 175, 20) {
             LoadoutManager.requestSkyblockSync()
         }
 
@@ -63,163 +116,180 @@ class LoadoutScreen : NoemtScreen(
             val id = "loadout_$i"
             val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $i", loadoutSlot = i)
 
-            if (rowY in (windowY + 50)..(windowY + windowHeight - 65)) {
+            if (rowY in (windowY + 45)..(windowY + windowHeight - 65)) {
                 val currentLo = lo
 
                 // Equip button
-                ui.button("⚡", leftX + colWidth - 110, rowY + 3, 26, 18) {
+                ui.button("⚡", leftX + colWidth - 96, rowY + 3, 24, 18) {
                     LoadoutManager.swapTo(currentLo.id, "GUI Equip")
                 }
 
                 // Set Toggle A
                 val isA = LoadoutManager.loadoutAId == currentLo.id
-                ui.button(if (isA) "§a[A]" else "A", leftX + colWidth - 80, rowY + 3, 36, 18) {
+                ui.button(if (isA) "§a[A]" else "A", leftX + colWidth - 68, rowY + 3, 30, 18) {
                     LoadoutManager.loadoutAId = currentLo.id
-                    init()
+                    Minecraft.getInstance().execute { init() }
                 }
 
                 // Set Toggle B
                 val isB = LoadoutManager.loadoutBId == currentLo.id
-                ui.button(if (isB) "§e[B]" else "B", leftX + colWidth - 40, rowY + 3, 36, 18) {
+                ui.button(if (isB) "§e[B]" else "B", leftX + colWidth - 34, rowY + 3, 30, 18) {
                     LoadoutManager.loadoutBId = currentLo.id
-                    init()
+                    Minecraft.getInstance().execute { init() }
                 }
             }
-            rowY += 32
+            rowY += 30
         }
 
         // ==========================================
         // RIGHT COLUMN TOP: Active Rules List
         // ==========================================
+        val builderHeight = 195
+        val rulesMaxY = windowY + windowHeight - builderHeight - 35
         var ruleY = windowY + 58 - scrollOffsetRight
         val ruleList = LoadoutManager.rules.toList()
 
         for (rule in ruleList) {
-            if (ruleY in (windowY + 50)..(windowY + windowHeight - 190)) {
+            if (ruleY in (windowY + 45)..rulesMaxY) {
                 val r = rule
-                ui.button(if (r.enabled) "§a● ON" else "§c○ OFF", rightX + colWidth - 95, ruleY + 3, 50, 18) {
+                ui.button(if (r.enabled) "§a● ON" else "§c○ OFF", rightX + colWidth - 85, ruleY + 3, 46, 18) {
                     r.enabled = !r.enabled
                     LoadoutManager.saveData()
-                    init()
+                    Minecraft.getInstance().execute { init() }
                 }
 
-                ui.dangerButton("🗑", rightX + colWidth - 40, ruleY + 3, 36, 18) {
+                ui.dangerButton("🗑", rightX + colWidth - 34, ruleY + 3, 30, 18) {
                     LoadoutManager.removeRule(r.id)
                 }
             }
-            ruleY += 32
+            ruleY += 30
         }
 
         // ==========================================
-        // RIGHT COLUMN BOTTOM: Rule Builder Form
+        // RIGHT COLUMN BOTTOM: Rule Studio Builder
         // ==========================================
-        val builderY = windowY + windowHeight - 180
+        val builderY = windowY + windowHeight - builderHeight - 20
 
-        // 1. Trigger Category Selector
+        // Step 1: Trigger Type Tabs (y + 16)
         val triggerTypes = listOf(
-            "INSTANCE" to "🏰 Instance",
+            "INSTANCE" to "🏰 Zone / Island",
             "MINIBOSS" to "⚔️ Miniboss",
             "AIM" to "🎯 Aim",
             "CHAT" to "💬 Chat"
         )
+        val tabWidth = (colWidth - (triggerTypes.size - 1) * 4) / triggerTypes.size
         var tX = rightX
         for ((tKey, tLabel) in triggerTypes) {
             val isSel = builderTriggerType == tKey
-            ui.button(if (isSel) "§b§l$tLabel" else "§7$tLabel", tX, builderY + 16, 75, 18) {
+            ui.button(if (isSel) "§b§l$tLabel" else "§7$tLabel", tX, builderY + 16, tabWidth, 18) {
                 builderTriggerType = tKey
-                init()
+                Minecraft.getInstance().execute { init() }
             }
-            tX += 78
+            tX += tabWidth + 4
         }
 
-        // 2. Specific Sub-options
+        // Step 2: Categorized Condition Picker (y + 38 to y + 62)
         when (builderTriggerType) {
             "INSTANCE" -> {
-                val instances = GameInstanceType.values()
-                var instX = rightX
-                var instY = builderY + 38
-                for (instEnum in instances) {
-                    val isSel = builderGameInstance == instEnum
-                    val label = instEnum.displayName.take(13)
-                    ui.button(if (isSel) "§a§l$label" else "§7$label", instX, instY, 82, 16) {
-                        builderGameInstance = instEnum
-                        init()
+                // Sub-category tabs (y + 38)
+                val catTabWidth = (colWidth - (instanceCategories.size - 1) * 3) / instanceCategories.size
+                var cX = rightX
+                for ((cKey, cLabel) in instanceCategories) {
+                    val isCatSel = selectedInstanceCategory == cKey
+                    ui.button(if (isCatSel) "§e§l$cLabel" else "§8$cLabel", cX, builderY + 38, catTabWidth, 16) {
+                        selectedInstanceCategory = cKey
+                        Minecraft.getInstance().execute { init() }
                     }
-                    instX += 84
-                    if (instX > rightX + colWidth - 80) {
-                        instX = rightX
-                        instY += 18
+                    cX += catTabWidth + 3
+                }
+
+                // Direct Zone Buttons for selected category (y + 57)
+                val zoneList = categoryInstances[selectedInstanceCategory] ?: emptyList()
+                val zWidth = (colWidth - (zoneList.size.coerceAtLeast(1) - 1) * 4) / zoneList.size.coerceAtLeast(1)
+                var zX = rightX
+                for ((instEnum, instName) in zoneList) {
+                    val isInstSel = selectedGameInstance == instEnum
+                    ui.button(if (isInstSel) "§a§l✓ $instName" else "§7$instName", zX, builderY + 57, zWidth, 18) {
+                        selectedGameInstance = instEnum
+                        Minecraft.getInstance().execute { init() }
                     }
+                    zX += zWidth + 4
                 }
             }
 
-            "MINIBOSS" -> {
-                // Info label is rendered in renderWindow
-            }
-
             "AIM" -> {
-                val cats = listOf(
-                    MobCategory.BLOOD_MOB to "Blood Mobs",
-                    MobCategory.WATCHER to "Watcher",
-                    MobCategory.MINIBOSS to "Miniboss",
-                    MobCategory.BOSS to "Boss",
-                    MobCategory.SLAYER to "Slayer"
-                )
-                var catX = rightX
-                for ((catEnum, catLabel) in cats) {
-                    val isSel = builderMobCategory == catEnum
-                    ui.button(if (isSel) "§a§l$catLabel" else "§7$catLabel", catX, builderY + 38, 70, 18) {
-                        builderMobCategory = catEnum
-                        init()
+                val mobTabWidth = (colWidth - (mobCategories.size - 1) * 3) / mobCategories.size
+                var mX = rightX
+                for ((mobEnum, mobLabel) in mobCategories) {
+                    val isMobSel = selectedMobCategory == mobEnum
+                    ui.button(if (isMobSel) "§a§l✓ $mobLabel" else "§7$mobLabel", mX, builderY + 44, mobTabWidth, 18) {
+                        selectedMobCategory = mobEnum
+                        Minecraft.getInstance().execute { init() }
                     }
-                    catX += 73
+                    mX += mobTabWidth + 3
                 }
             }
 
             "CHAT" -> {
-                chatPatternBox = ui.textInput("Pattern", "[BOSS]", rightX + 50, builderY + 38, colWidth - 50, 18)
+                chatPatternBox = ui.textInput("Pattern", "[BOSS]", rightX + 55, builderY + 44, colWidth - 180, 18)
+                ui.button("Blood", rightX + colWidth - 120, builderY + 44, 55, 18) {
+                    chatPatternBox?.value = "BLOOD DOOR"
+                }
+                ui.button("Watcher", rightX + colWidth - 60, builderY + 44, 60, 18) {
+                    chatPatternBox?.value = "The Watcher: You have proven"
+                }
+            }
+
+            "MINIBOSS" -> {
+                // Info drawn in renderWindow
             }
         }
 
-        // 3. Target Slot Selector (1..12)
-        var slotBtnX = rightX
+        // Step 3: Target Loadout Slot Grid (Rows: y + 80, y + 100)
+        // Render 2 rows of 6 with actual synced loadout names!
+        val sBtnWidth = (colWidth - 5 * 4) / 6
+        var sX = rightX
         for (s in 1..6) {
+            val id = "loadout_$s"
+            val loName = LoadoutManager.loadouts[id]?.name?.take(7) ?: "Slot $s"
             val isSel = builderTargetSlot == s
-            ui.button(if (isSel) "§6§lS$s" else "§7S$s", slotBtnX, builderY + 92, 54, 18) {
+            ui.button(if (isSel) "§6§lS$s: $loName" else "§7S$s: $loName", sX, builderY + 80, sBtnWidth, 18) {
                 builderTargetSlot = s
-                init()
+                Minecraft.getInstance().execute { init() }
             }
-            slotBtnX += 56
+            sX += sBtnWidth + 4
         }
 
-        slotBtnX = rightX
+        sX = rightX
         for (s in 7..12) {
+            val id = "loadout_$s"
+            val loName = LoadoutManager.loadouts[id]?.name?.take(7) ?: "Slot $s"
             val isSel = builderTargetSlot == s
-            ui.button(if (isSel) "§6§lS$s" else "§7S$s", slotBtnX, builderY + 112, 54, 18) {
+            ui.button(if (isSel) "§6§lS$s: $loName" else "§7S$s: $loName", sX, builderY + 100, sBtnWidth, 18) {
                 builderTargetSlot = s
-                init()
+                Minecraft.getInstance().execute { init() }
             }
-            slotBtnX += 56
+            sX += sBtnWidth + 4
         }
 
-        // Cooldown Box
-        cooldownBox = ui.textInput("Cooldown", "2.5", rightX + 85, builderY + 134, 45, 18)
+        // Step 4: Cooldown & Save Rule Button (Row: y + 126)
+        val actionY = builderY + 126
+        cooldownBox = ui.textInput("Cooldown", "2.5", rightX + 75, actionY, 44, 18)
 
-        // Add Rule Button
-        ui.successButton("§a➕ Save Auto-Swap Rule", rightX + 138, builderY + 134, colWidth - 138, 18) {
+        ui.successButton("§a➕ Save Auto-Swap Rule", rightX + 126, actionY, colWidth - 126, 18) {
             val targetId = "loadout_$builderTargetSlot"
             val cdVal = cooldownBox?.value?.toDoubleOrNull() ?: 2.5
 
             val (ruleName, condition) = when (builderTriggerType) {
                 "INSTANCE" -> {
-                    "Join ${builderGameInstance.displayName}" to LoadoutCondition.GameInstanceCondition(instanceType = builderGameInstance)
+                    "Join ${selectedGameInstance.displayName}" to LoadoutCondition.GameInstanceCondition(instanceType = selectedGameInstance)
                 }
                 "MINIBOSS" -> {
                     "Miniboss Encounter (Auto-Reverts on Kill)" to LoadoutCondition.MinibossCondition(autoRevertOnKill = true)
                 }
                 "AIM" -> {
-                    val catName = builderMobCategory.name.replace("_", " ")
-                    "Aim at $catName" to LoadoutCondition.AimCondition(mobCategory = builderMobCategory)
+                    val mobName = selectedMobCategory.name.replace("_", " ")
+                    "Aim at $mobName" to LoadoutCondition.AimCondition(mobCategory = selectedMobCategory)
                 }
                 "CHAT" -> {
                     val pat = chatPatternBox?.value ?: "[BOSS]"
@@ -246,22 +316,23 @@ class LoadoutScreen : NoemtScreen(
         val bottomY = windowY + windowHeight - 26
         val config = ConfigManager.config.loadout
 
-        ui.toggleButton("Swapper", config.enabled, windowX + 16, bottomY, 120, 18) {
+        ui.toggleButton("Swapper", config.enabled, windowX + 16, bottomY, 110, 18) {
             config.enabled = !config.enabled
-            init()
+            Minecraft.getInstance().execute { init() }
         }
 
-        ui.toggleButton("HUD", config.showHud, windowX + 142, bottomY, 85, 18) {
+        ui.toggleButton("HUD", config.showHud, windowX + 132, bottomY, 80, 18) {
             config.showHud = !config.showHud
-            init()
+            Minecraft.getInstance().execute { init() }
         }
 
-        ui.toggleButton("Sound", config.playSound, windowX + 233, bottomY, 85, 18) {
+        ui.toggleButton("Sound", config.playSound, windowX + 218, bottomY, 80, 18) {
             config.playSound = !config.playSound
-            init()
+            Minecraft.getInstance().execute { init() }
         }
 
-        ui.button("🔄 Swap Back (B)", windowX + windowWidth - 145, bottomY, 128, 18) {
+        val prevLoName = LoadoutManager.previousLoadoutId?.let { LoadoutManager.loadouts[it]?.name ?: it } ?: "None"
+        ui.button("🔄 Revert to Previous (Keybind [B])", windowX + windowWidth - 210, bottomY, 194, 18) {
             LoadoutManager.swapToPrevious()
         }
     }
@@ -285,48 +356,50 @@ class LoadoutScreen : NoemtScreen(
             val id = "loadout_$i"
             val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $i", loadoutSlot = i)
 
-            if (rowY in (windowY + 50)..(windowY + windowHeight - 65)) {
+            if (rowY in (windowY + 45)..(windowY + windowHeight - 65)) {
                 val isActive = LoadoutManager.currentLoadoutId == lo.id
                 val rowBg = if (isActive) GuiTheme.CARD_SURFACE_ACTIVE else GuiTheme.CARD_SURFACE
-                graphics.fill(leftX, rowY, leftX + colWidth, rowY + 26, rowBg)
+                graphics.fill(leftX, rowY, leftX + colWidth, rowY + 24, rowBg)
 
                 val badge = "§6S$i: "
-                val nameDisplay = lo.name.take(24)
-                graphics.text(font, "$badge§f$nameDisplay", leftX + 6, rowY + 8, GuiTheme.TEXT_WHITE, true)
+                val nameDisplay = lo.name.take(22)
+                graphics.text(font, "$badge§f$nameDisplay", leftX + 6, rowY + 7, GuiTheme.TEXT_WHITE, true)
             }
-            rowY += 32
+            rowY += 30
         }
 
         // Render Right Column: Active Rules
+        val builderHeight = 195
+        val rulesMaxY = windowY + windowHeight - builderHeight - 35
         var ruleY = windowY + 58 - scrollOffsetRight
         val ruleList = LoadoutManager.rules.toList()
 
         if (ruleList.isEmpty()) {
-            graphics.text(font, "§7No active rules. Build one below!", rightX + 6, windowY + 65, Color.GRAY.rgb, false)
+            graphics.text(font, "§7No active rules. Create one below!", rightX + 6, windowY + 65, Color.GRAY.rgb, false)
         } else {
             for (rule in ruleList) {
-                if (ruleY in (windowY + 50)..(windowY + windowHeight - 190)) {
+                if (ruleY in (windowY + 45)..rulesMaxY) {
                     val rowBg = if (rule.enabled) GuiTheme.CARD_SURFACE else Color(20, 24, 32, 160).rgb
-                    graphics.fill(rightX, ruleY, rightX + colWidth, ruleY + 26, rowBg)
+                    graphics.fill(rightX, ruleY, rightX + colWidth, ruleY + 24, rowBg)
 
                     val targetLo = LoadoutManager.loadouts[rule.targetLoadoutId]?.name ?: rule.targetLoadoutId
-                    graphics.text(font, "§f${rule.name.take(22)} §7➜ §6$targetLo", rightX + 6, ruleY + 8, GuiTheme.TEXT_WHITE, true)
+                    graphics.text(font, "§f${rule.name.take(20)} §7➜ §6$targetLo", rightX + 6, ruleY + 7, GuiTheme.TEXT_WHITE, true)
                 }
-                ruleY += 32
+                ruleY += 30
             }
         }
 
         // Render Rule Builder Section Header
-        val builderY = windowY + windowHeight - 180
+        val builderY = windowY + windowHeight - builderHeight - 20
         graphics.fill(rightX, builderY - 6, rightX + colWidth, builderY - 5, GuiTheme.BORDER_MUTED)
-        graphics.text(font, "§e§l➕ Quick Rule Builder (Trigger ➜ Swap):", rightX, builderY + 2, GuiTheme.COLOR_WARNING, true)
+        graphics.text(font, "§e§l➕ Rule Studio (Trigger ➜ Equip Target Slot):", rightX, builderY + 2, GuiTheme.COLOR_WARNING, true)
 
         if (builderTriggerType == "MINIBOSS") {
-            graphics.text(font, "§a⚡ Auto-swaps when aiming at a Miniboss, then swaps BACK when killed!", rightX + 2, builderY + 45, GuiTheme.COLOR_SUCCESS, false)
+            graphics.text(font, "§a⚡ Locks onto SA/LA/AA/Midas when aimed at & auto-reverts on kill!", rightX + 4, builderY + 48, GuiTheme.COLOR_SUCCESS, false)
         } else if (builderTriggerType == "CHAT") {
-            graphics.text(font, "§7Pattern:", rightX + 6, builderY + 42, GuiTheme.TEXT_MUTED, false)
+            graphics.text(font, "§7Pattern:", rightX + 4, builderY + 48, GuiTheme.TEXT_MUTED, false)
         }
-        graphics.text(font, "§7Cooldown (s):", rightX + 10, builderY + 138, GuiTheme.TEXT_MUTED, false)
+        graphics.text(font, "§7Cooldown (s):", rightX + 4, builderY + 130, GuiTheme.TEXT_MUTED, false)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
@@ -339,7 +412,7 @@ class LoadoutScreen : NoemtScreen(
             if (scrollY > 0) scrollOffsetRight = (scrollOffsetRight - 24).coerceAtLeast(0)
             else if (scrollY < 0) scrollOffsetRight = (scrollOffsetRight + 24).coerceAtMost(180)
         }
-        init()
+        Minecraft.getInstance().execute { init() }
         return true
     }
 }
