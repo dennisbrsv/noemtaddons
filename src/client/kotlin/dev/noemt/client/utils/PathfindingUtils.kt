@@ -102,37 +102,37 @@ object PathfindingUtils {
 
     fun getBloodRoomFloorPositions(): List<BlockPos> {
         val level = mc.level ?: return emptyList()
-        val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD } ?: return emptyList()
-        val roomCenter = Vec3(bloodRoom.centerPos.x.toDouble(), 69.0, bloodRoom.centerPos.z.toDouble())
+        val player = mc.player ?: return emptyList()
+
+        val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
+            ?: DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }?.uniqueRoom
+
+        val roomCenter = bloodRoom?.let { Vec3(it.centerPos.x.toDouble(), 69.0, it.centerPos.z.toDouble()) }
+            ?: player.position()
+
         val floorPositions = mutableListOf<BlockPos>()
+        val cX = roomCenter.x.toInt()
+        val cZ = roomCenter.z.toInt()
 
-        val tiles = bloodRoom.tiles.filterIsInstance<RoomTile>()
-        for (tile in tiles) {
-            val startX = tile.x - 13
-            val endX = tile.x + 13
-            val startZ = tile.z - 13
-            val endZ = tile.z + 13
+        for (x in (cX - 14)..(cX + 14)) {
+            for (z in (cZ - 14)..(cZ + 14)) {
+                for (y in 68..71) {
+                    val pos = BlockPos(x, y, z)
+                    val state = level.getBlockState(pos)
+                    if (state.isAir || state.getCollisionShape(level, pos).isEmpty) continue
 
-            for (x in startX..endX) {
-                for (z in startZ..endZ) {
-                    for (y in 68..70) {
-                        val pos = BlockPos(x, y, z)
-                        val state = level.getBlockState(pos)
-                        if (state.isAir || state.getCollisionShape(level, pos).isEmpty) continue
+                    val above1 = pos.above(1)
+                    val above2 = pos.above(2)
+                    val s1 = level.getBlockState(above1)
+                    val s2 = level.getBlockState(above2)
 
-                        val above1 = pos.above(1)
-                        val above2 = pos.above(2)
-                        val s1 = level.getBlockState(above1)
-                        val s2 = level.getBlockState(above2)
+                    if ((s1.isAir || s1.getCollisionShape(level, above1).isEmpty) &&
+                        (s2.isAir || s2.getCollisionShape(level, above2).isEmpty)) {
 
-                        if ((s1.isAir || s1.getCollisionShape(level, above1).isEmpty) &&
-                            (s2.isAir || s2.getCollisionShape(level, above2).isEmpty)) {
-
-                            if (hasPillarClearance(pos) && hasCenterLineOfSight(pos, roomCenter)) {
-                                floorPositions.add(pos)
-                            }
-                            break
+                        if (hasPillarClearance(pos)) {
+                            floorPositions.add(pos)
                         }
+                        break
                     }
                 }
             }
