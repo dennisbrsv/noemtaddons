@@ -42,10 +42,10 @@ object PathfindingUtils {
         if (yawDiff > 180.0) yawDiff -= 360.0
         if (yawDiff < -180.0) yawDiff += 360.0
 
-        val forward = yawDiff in -60.0..60.0
-        val back = yawDiff > 120.0 || yawDiff < -120.0
-        val left = yawDiff in -150.0..-30.0
-        val right = yawDiff in 30.0..150.0
+        val forward = yawDiff in -65.0..65.0
+        val back = yawDiff > 115.0 || yawDiff < -115.0
+        val left = yawDiff in -155.0..-25.0
+        val right = yawDiff in 25.0..155.0
 
         mc.options.keyUp.isDown = forward
         mc.options.keyDown.isDown = back
@@ -53,15 +53,18 @@ object PathfindingUtils {
         mc.options.keyRight.isDown = right
         mc.options.keySprint.isDown = sprint && forward
 
-        val shouldJump = player.horizontalCollision || isBlockInFront()
+        val shouldJump = player.horizontalCollision || isBlockInMoveDirection(dx, dz)
         mc.options.keyJump.isDown = shouldJump
     }
 
-    private fun isBlockInFront(): Boolean {
+    private fun isBlockInMoveDirection(dx: Double, dz: Double): Boolean {
         val player = mc.player ?: return false
         val level = mc.level ?: return false
-        val look = RotationUtils.getLookVec(player.yRot, 0f).scale(0.7)
-        val checkPos = BlockPos.containing(player.x + look.x, player.y + 0.5, player.z + look.z)
+        val len = hypot(dx, dz)
+        if (len < 0.001) return false
+        val normX = (dx / len) * 0.7
+        val normZ = (dz / len) * 0.7
+        val checkPos = BlockPos.containing(player.x + normX, player.y + 0.5, player.z + normZ)
         val state = level.getBlockState(checkPos)
         return !state.isAir && !state.getCollisionShape(level, checkPos).isEmpty
     }
@@ -77,22 +80,6 @@ object PathfindingUtils {
         mc.options.keySprint.isDown = false
     }
 
-    fun hasPillarClearance(pos: BlockPos): Boolean {
-        val level = mc.level ?: return false
-        for (dx in -1..1) {
-            for (dz in -1..1) {
-                if (dx == 0 && dz == 0) continue
-                val b1 = pos.offset(dx, 1, dz)
-                val b2 = pos.offset(dx, 2, dz)
-                val s1 = level.getBlockState(b1)
-                val s2 = level.getBlockState(b2)
-                if (!s1.isAir && !s1.getCollisionShape(level, b1).isEmpty) return false
-                if (!s2.isAir && !s2.getCollisionShape(level, b2).isEmpty) return false
-            }
-        }
-        return true
-    }
-
     fun hasCenterLineOfSight(pos: BlockPos, roomCenter: Vec3): Boolean {
         val eyePos = Vec3(pos.x + 0.5, pos.y + 1.62, pos.z + 0.5)
         val centerTarget1 = Vec3(roomCenter.x, 69.5, roomCenter.z)
@@ -104,18 +91,15 @@ object PathfindingUtils {
         val level = mc.level ?: return emptyList()
         val player = mc.player ?: return emptyList()
 
-        val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
-            ?: DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }?.uniqueRoom
-
-        val roomCenter = bloodRoom?.let { Vec3(it.centerPos.x.toDouble(), 69.0, it.centerPos.z.toDouble()) }
-            ?: player.position()
+        val center = dev.noemt.client.features.blood.AutoBloodCamp.getBloodRoomCenter()
+            ?: return emptyList()
 
         val floorPositions = mutableListOf<BlockPos>()
-        val cX = roomCenter.x.toInt()
-        val cZ = roomCenter.z.toInt()
+        val cX = center.x
+        val cZ = center.z
 
-        for (x in (cX - 14)..(cX + 14)) {
-            for (z in (cZ - 14)..(cZ + 14)) {
+        for (x in (cX - 13)..(cX + 13)) {
+            for (z in (cZ - 13)..(cZ + 13)) {
                 for (y in 68..71) {
                     val pos = BlockPos(x, y, z)
                     val state = level.getBlockState(pos)
@@ -126,12 +110,10 @@ object PathfindingUtils {
                     val s1 = level.getBlockState(above1)
                     val s2 = level.getBlockState(above2)
 
+                    // Must have clear standing headroom of 2 blocks above floor
                     if ((s1.isAir || s1.getCollisionShape(level, above1).isEmpty) &&
                         (s2.isAir || s2.getCollisionShape(level, above2).isEmpty)) {
-
-                        if (hasPillarClearance(pos)) {
-                            floorPositions.add(pos)
-                        }
+                        floorPositions.add(pos)
                         break
                     }
                 }
@@ -140,39 +122,59 @@ object PathfindingUtils {
         return floorPositions
     }
 
-    fun findSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 7.5): BlockPos? {
+    private fun minDistanceToTnts(pos: BlockPos, tntPositions: List<Vec3>): Double {
+        if (tntPositions.isEmpty()) return Double.MAX_VALUE
+        val px = pos.x + 0.5
+        val py = pos.y + 1.0
+        val pz = pos.z + 0.5
+        return tntPositions.minOf { tnt ->
+            val d2d = hypot(px - tnt.x, pz - tnt.z)
+            val d3d = sqrt((px - tnt.x).pow(2) + (py - tnt.y).pow(2) + (pz - tnt.z).pow(2))
+            min(d2d, d3d)
+        }
+    }
+
+    fun findSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 5.0): BlockPos? {
         val player = mc.player ?: return null
         val candidates = getBloodRoomFloorPositions()
         if (candidates.isEmpty()) return null
 
-        return candidates
-            .filter { pos ->
-                val center = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
-                tntPositions.all { tnt -> center.distanceTo(tnt) >= minDistance }
-            }
-            .minByOrNull { pos ->
+        val completelySafe = candidates.filter { minDistanceToTnts(it, tntPositions) >= minDistance }
+        if (completelySafe.isNotEmpty()) {
+            return completelySafe.minByOrNull { pos ->
                 val center = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
                 player.position().distanceToSqr(center)
             }
+        }
+
+        // If no candidate satisfies full minDistance, pick the candidate that maximizes distance to closest TNT
+        return candidates.maxByOrNull { minDistanceToTnts(it, tntPositions) }
     }
 
-    fun findAotvSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 7.5): BlockPos? {
+    fun findAotvSafePositionFromTnts(tntPositions: List<Vec3>, minDistance: Double = 5.0): BlockPos? {
         val player = mc.player ?: return null
         val eyePos = player.eyePosition
         val candidates = getBloodRoomFloorPositions()
         if (candidates.isEmpty()) return null
 
-        return candidates.filter { pos ->
+        val safeCandidates = candidates.filter { pos ->
             val targetTop = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
             val dist = eyePos.distanceTo(targetTop)
 
             dist in 3.5..13.0 &&
-            tntPositions.all { tnt -> targetTop.distanceTo(tnt) >= minDistance } &&
+            minDistanceToTnts(pos, tntPositions) >= minDistance &&
             hasLineOfSight(eyePos, targetTop)
-        }.maxByOrNull { pos ->
-            val targetTop = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
-            tntPositions.minOfOrNull { it.distanceTo(targetTop) } ?: 0.0
         }
+
+        if (safeCandidates.isNotEmpty()) {
+            return safeCandidates.maxByOrNull { minDistanceToTnts(it, tntPositions) }
+        }
+
+        return candidates.filter { pos ->
+            val targetTop = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
+            val dist = eyePos.distanceTo(targetTop)
+            dist in 3.5..13.0 && hasLineOfSight(eyePos, targetTop)
+        }.maxByOrNull { minDistanceToTnts(it, tntPositions) }
     }
 
     fun findAotvShootingPosition(target: Vec3, tntPositions: List<Vec3>): BlockPos? {
@@ -187,7 +189,7 @@ object PathfindingUtils {
             val dist = eyePos.distanceTo(targetTop)
 
             dist in 4.0..13.0 &&
-            tntPositions.all { tnt -> targetTop.distanceTo(tnt) >= 7.0 } &&
+            minDistanceToTnts(pos, tntPositions) >= 5.0 &&
             hasLineOfSight(eyePos, targetTop) &&
             hasLineOfSight(candidateEye, target)
         }.minByOrNull { pos ->
@@ -202,8 +204,7 @@ object PathfindingUtils {
         if (candidates.isEmpty()) return null
 
         val safeCandidates = candidates.filter { pos ->
-            val center = Vec3(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
-            tntPositions.all { tnt -> center.distanceTo(tnt) >= 7.0 }
+            minDistanceToTnts(pos, tntPositions) >= 5.0
         }
 
         return safeCandidates

@@ -417,7 +417,7 @@ open class NoemtaddonsConfig : Config() {
         var autoBloodAotv: Boolean = true
 
         @Expose
-        @ConfigOption(name = "Auto TNT Evasion", desc = "Automatically moves away from primed TNTs on the ground (>7 blocks).")
+        @ConfigOption(name = "Auto TNT Evasion", desc = "Automatically moves away from primed TNTs on the ground (>5 blocks).")
         @ConfigEditorBoolean
         @JvmField
         var autoBloodTntEvade: Boolean = true

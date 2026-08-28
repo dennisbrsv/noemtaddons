@@ -52,13 +52,11 @@ object AOTVHelper {
         if (!state2.isAir && !state2.getCollisionShape(level, above2).isEmpty) return false
 
         val targetVec = Vec3(pos.x + 0.5, pos.y.toDouble(), pos.z + 0.5)
-        val room = ScanUtils.getRoomFromPos(targetVec)
-        if (room?.data?.type != RoomType.BLOOD) return false
+        if (!dev.noemt.client.features.blood.AutoBloodCamp.isInsideBloodRoom(targetVec)) return false
 
-        if (!PathfindingUtils.hasPillarClearance(pos)) return false
-
-        val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
-        val roomCenter = bloodRoom?.let { Vec3(it.centerPos.x.toDouble(), 69.0, it.centerPos.z.toDouble()) }
+        val roomCenter = dev.noemt.client.features.blood.AutoBloodCamp.getBloodRoomCenter()?.let {
+            Vec3(it.x.toDouble() + 0.5, 69.0, it.z.toDouble() + 0.5)
+        }
         if (roomCenter != null && !PathfindingUtils.hasCenterLineOfSight(pos, roomCenter)) return false
 
         return true

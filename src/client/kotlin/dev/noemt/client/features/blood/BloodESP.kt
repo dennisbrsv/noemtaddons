@@ -67,7 +67,7 @@ object BloodESP : Module {
         }
     }
 
-    private fun findBlood(): Pair<BlockPos, Int>? {
+    fun findBlood(): Pair<BlockPos, Int>? {
         val level = mc.level ?: return null
         val playerPos = mc.player?.blockPosition() ?: return null
 

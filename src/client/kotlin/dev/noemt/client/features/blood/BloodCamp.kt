@@ -174,7 +174,8 @@ object BloodCamp : Module {
         }
 
         register<EntityUnloadEvent> {
-            if (!ConfigManager.config.blood.bloodCamp) return@register
+            val config = ConfigManager.config.blood
+            if (!config.bloodCamp && !config.autoBloodCamp) return@register
             bloodMobs.remove(event.entity)
         }
 
