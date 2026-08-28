@@ -32,6 +32,37 @@ open class NoemtaddonsConfig : Config() {
     @JvmField
     var remote: RemoteCategory = RemoteCategory()
 
+    @Expose
+    @Category(name = "Loadout Swapper", desc = "Conditional loadout swapper and keybinds")
+    @JvmField
+    var loadout: LoadoutCategory = LoadoutCategory()
+
+    class LoadoutCategory {
+        @Expose
+        @ConfigOption(name = "Enable Loadout Swapper", desc = "Master toggle for conditional and keybind loadout swapping.")
+        @ConfigEditorBoolean
+        @JvmField
+        var enabled: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "HUD Loadout Display", desc = "Renders current active loadout name on screen.")
+        @ConfigEditorBoolean
+        @JvmField
+        var showHud: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "Notification Sound", desc = "Plays sound when loadout is swapped.")
+        @ConfigEditorBoolean
+        @JvmField
+        var playSound: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "Default Command Delay (ms)", desc = "Delay in milliseconds between loadout commands.")
+        @ConfigEditorSlider(minValue = 50f, maxValue = 500f, minStep = 25f)
+        @JvmField
+        var defaultDelayMs: Float = 100f
+    }
+
     class RemoteCategory {
         @Expose
         @ConfigOption(name = "Discord Notifications", desc = "Enables Discord bot notifications.")

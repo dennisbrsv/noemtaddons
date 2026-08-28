@@ -274,6 +274,151 @@ object NoemtaddonsClient : ClientModInitializer {
                         }
                 )
             }
+
+            // Register Loadout Swapper Commands
+            for (lCmd in listOf("loadout", "loadouts", "lo")) {
+                dispatcher.register(
+                    ClientCommands.literal(lCmd)
+                        .then(
+                            ClientCommands.literal("toggle")
+                                .executes {
+                                    dev.noemt.client.features.loadout.LoadoutManager.toggleAB()
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("back")
+                                .executes {
+                                    dev.noemt.client.features.loadout.LoadoutManager.swapToPrevious()
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("prev")
+                                .executes {
+                                    dev.noemt.client.features.loadout.LoadoutManager.swapToPrevious()
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("current")
+                                .executes {
+                                    val current = dev.noemt.client.features.loadout.LoadoutManager.getCurrentLoadout()
+                                    val name = current?.name ?: "None"
+                                    val id = current?.id ?: "none"
+                                    ChatUtils.modMessage("&b[Loadout] &aCurrent Active Loadout: &e$name &7(ID: &f$id&7)")
+                                    ChatUtils.modMessage("&7  Toggle pair: &b${dev.noemt.client.features.loadout.LoadoutManager.loadoutAId} &7⇄ &b${dev.noemt.client.features.loadout.LoadoutManager.loadoutBId}")
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("swap")
+                                .then(
+                                    ClientCommands.argument("target", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                        .suggests { ctx, builder ->
+                                            val ids = dev.noemt.client.features.loadout.LoadoutManager.loadouts.keys
+                                            net.minecraft.commands.SharedSuggestionProvider.suggest(ids, builder)
+                                        }
+                                        .executes { ctx ->
+                                            val target = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "target")
+                                            dev.noemt.client.features.loadout.LoadoutManager.swapTo(target, "Command ($lCmd swap)")
+                                            1
+                                        }
+                                )
+                        )
+                        .then(
+                            ClientCommands.literal("list")
+                                .executes {
+                                    ChatUtils.modMessage("&b&l=== Configured Loadouts ===")
+                                    val curr = dev.noemt.client.features.loadout.LoadoutManager.currentLoadoutId
+                                    for ((id, lo) in dev.noemt.client.features.loadout.LoadoutManager.loadouts) {
+                                        val activeIndicator = if (id == curr) " &a[ACTIVE]" else ""
+                                        ChatUtils.modMessage("&e• &6${lo.name} &7(&b$id&7)$activeIndicator")
+                                        if (lo.wardrobeSlot != null) ChatUtils.modMessage("    &7Wardrobe Slot: &f${lo.wardrobeSlot}")
+                                        if (lo.petName != null) ChatUtils.modMessage("    &7Pet: &f${lo.petName}")
+                                        if (lo.commands.isNotEmpty()) ChatUtils.modMessage("    &7Commands: &f${lo.commands.joinToString()}")
+                                    }
+                                    ChatUtils.modMessage("&b&l=== Conditional Rules ===")
+                                    for (r in dev.noemt.client.features.loadout.LoadoutManager.rules) {
+                                        val state = if (r.enabled) "&a[ENABLED]" else "&c[DISABLED]"
+                                        ChatUtils.modMessage("&e• $state &f${r.name} &7-> &b${r.targetLoadoutId} &7(ID: &f${r.id}&7)")
+                                    }
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("set")
+                                .then(
+                                    ClientCommands.literal("A")
+                                        .then(
+                                            ClientCommands.argument("loadout_id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .suggests { ctx, builder ->
+                                                    val ids = dev.noemt.client.features.loadout.LoadoutManager.loadouts.keys
+                                                    net.minecraft.commands.SharedSuggestionProvider.suggest(ids, builder)
+                                                }
+                                                .executes { ctx ->
+                                                    val id = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "loadout_id")
+                                                    dev.noemt.client.features.loadout.LoadoutManager.loadoutAId = id
+                                                    ChatUtils.modMessage("&b[Loadout] &aSet Toggle Loadout A to: &e$id")
+                                                    1
+                                                }
+                                        )
+                                )
+                                .then(
+                                    ClientCommands.literal("B")
+                                        .then(
+                                            ClientCommands.argument("loadout_id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .suggests { ctx, builder ->
+                                                    val ids = dev.noemt.client.features.loadout.LoadoutManager.loadouts.keys
+                                                    net.minecraft.commands.SharedSuggestionProvider.suggest(ids, builder)
+                                                }
+                                                .executes { ctx ->
+                                                    val id = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "loadout_id")
+                                                    dev.noemt.client.features.loadout.LoadoutManager.loadoutBId = id
+                                                    ChatUtils.modMessage("&b[Loadout] &aSet Toggle Loadout B to: &e$id")
+                                                    1
+                                                }
+                                        )
+                                )
+                        )
+                        .then(
+                            ClientCommands.literal("rule")
+                                .then(
+                                    ClientCommands.literal("toggle")
+                                        .then(
+                                            ClientCommands.argument("rule_id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .suggests { ctx, builder ->
+                                                    val ids = dev.noemt.client.features.loadout.LoadoutManager.rules.map { it.id }
+                                                    net.minecraft.commands.SharedSuggestionProvider.suggest(ids, builder)
+                                                }
+                                                .executes { ctx ->
+                                                    val ruleId = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "rule_id")
+                                                    val rule = dev.noemt.client.features.loadout.LoadoutManager.rules.find { it.id.equals(ruleId, ignoreCase = true) }
+                                                    if (rule != null) {
+                                                        rule.enabled = !rule.enabled
+                                                        dev.noemt.client.features.loadout.LoadoutManager.saveData()
+                                                        val s = if (rule.enabled) "&aENABLED" else "&cDISABLED"
+                                                        ChatUtils.modMessage("&b[Loadout] &7Rule &f${rule.name} &7is now $s")
+                                                    } else {
+                                                        ChatUtils.modMessage("&c[Loadout] Rule '$ruleId' not found.")
+                                                    }
+                                                    1
+                                                }
+                                        )
+                                )
+                        )
+                        .executes {
+                            ChatUtils.modMessage("&b&l=== Loadout Swapper Commands ===")
+                            ChatUtils.modMessage("&e\$$lCmd toggle &7- Swap between Loadout A and B")
+                            ChatUtils.modMessage("&e\$$lCmd swap <id> &7- Swap directly to a loadout")
+                            ChatUtils.modMessage("&e\$$lCmd current &7- View currently active loadout")
+                            ChatUtils.modMessage("&e\$$lCmd list &7- List all loadouts and rules")
+                            ChatUtils.modMessage("&e\$$lCmd set <A|B> <id> &7- Configure toggle pair")
+                            ChatUtils.modMessage("&e\$$lCmd rule toggle <id> &7- Toggle conditional rule")
+                            1
+                        }
+                )
+            }
         }
     }
 }
