@@ -407,14 +407,28 @@ object NoemtaddonsClient : ClientModInitializer {
                                         )
                                 )
                         )
+                        .then(
+                            ClientCommands.literal("gui")
+                                .executes {
+                                    net.minecraft.client.Minecraft.getInstance().execute {
+                                        net.minecraft.client.Minecraft.getInstance().setScreen(dev.noemt.client.features.loadout.LoadoutScreen())
+                                    }
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("menu")
+                                .executes {
+                                    net.minecraft.client.Minecraft.getInstance().execute {
+                                        net.minecraft.client.Minecraft.getInstance().setScreen(dev.noemt.client.features.loadout.LoadoutScreen())
+                                    }
+                                    1
+                                }
+                        )
                         .executes {
-                            ChatUtils.modMessage("&b&l=== Loadout Swapper Commands ===")
-                            ChatUtils.modMessage("&e\$$lCmd toggle &7- Swap between Loadout A and B")
-                            ChatUtils.modMessage("&e\$$lCmd swap <id> &7- Swap directly to a loadout")
-                            ChatUtils.modMessage("&e\$$lCmd current &7- View currently active loadout")
-                            ChatUtils.modMessage("&e\$$lCmd list &7- List all loadouts and rules")
-                            ChatUtils.modMessage("&e\$$lCmd set <A|B> <id> &7- Configure toggle pair")
-                            ChatUtils.modMessage("&e\$$lCmd rule toggle <id> &7- Toggle conditional rule")
+                            net.minecraft.client.Minecraft.getInstance().execute {
+                                net.minecraft.client.Minecraft.getInstance().setScreen(dev.noemt.client.features.loadout.LoadoutScreen())
+                            }
                             1
                         }
                 )

@@ -17,7 +17,7 @@ object LoadoutModule : Module {
     override val id = "loadout_swapper"
     override val name = "Loadout Swapper"
     override val description = "Conditional and keybind-based loadout manager"
-    override val type = ModuleType.LEGIT
+    override val type = ModuleType.CHEAT
 
     private val mc: Minecraft get() = Minecraft.getInstance()
 
