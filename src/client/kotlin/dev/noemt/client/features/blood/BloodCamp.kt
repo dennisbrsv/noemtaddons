@@ -16,6 +16,7 @@ import dev.noemt.client.utils.MathUtils.add
 import dev.noemt.client.utils.MathUtils.invert
 import dev.noemt.client.utils.NumbersUtils.toFixed
 import dev.noemt.client.utils.ThreadUtils
+import kotlin.math.abs
 import dev.noemt.client.module.Module
 import dev.noemt.client.module.ModuleType
 import net.minecraft.client.Minecraft
@@ -104,11 +105,23 @@ object BloodCamp : Module {
             if (LocationUtils.inBoss || !LocationUtils.inDungeon) return@register
             if (watcherEntity == null) {
                 val level = mc.level ?: return@register
-                val z = level.entitiesForRendering().filterIsInstance<Zombie>().find {
-                    it.y > 68.0 && (it.customName?.string?.contains("Watcher", ignoreCase = true) == true ||
-                            ItemUtils.getSkullTexture(it.getItemBySlot(EquipmentSlot.HEAD)) in watcherSkulls)
+                val watcherStand = level.entitiesForRendering().find {
+                    it is ArmorStand && it.customName?.string?.contains("The Watcher", ignoreCase = true) == true
                 }
-                if (z != null) watcherEntity = z
+                if (watcherStand != null) {
+                    val z = level.entitiesForRendering().filterIsInstance<Zombie>().find {
+                        abs(it.x - watcherStand.x) < 2.0 && abs(it.z - watcherStand.z) < 2.0 && it.y > 68.0
+                    }
+                    if (z != null) watcherEntity = z
+                }
+
+                if (watcherEntity == null) {
+                    val z = level.entitiesForRendering().filterIsInstance<Zombie>().find {
+                        it.y > 68.0 && (it.customName?.string?.contains("Watcher", ignoreCase = true) == true ||
+                                ItemUtils.getSkullTexture(it.getItemBySlot(EquipmentSlot.HEAD)) in watcherSkulls)
+                    }
+                    if (z != null) watcherEntity = z
+                }
             }
         }
 

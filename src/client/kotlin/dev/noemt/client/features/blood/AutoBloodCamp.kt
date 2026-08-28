@@ -12,6 +12,7 @@ import dev.noemt.client.utils.ChatUtils.removeFormatting
 import dev.noemt.client.utils.map.core.RoomTile
 import dev.noemt.client.utils.map.core.RoomType
 import dev.noemt.client.utils.map.handlers.DungeonScanner
+import dev.noemt.client.utils.map.handlers.HotbarMapScanner
 import dev.noemt.client.utils.map.utils.ScanUtils
 import dev.noemt.client.module.Module
 import dev.noemt.client.module.ModuleType
@@ -485,56 +486,105 @@ object AutoBloodCamp : Module {
         if (!LocationUtils.inDungeon || LocationUtils.inBoss) return false
         val playerPos = player.position()
 
-        // 1. If map scanner identifies player in a non-blood room, NEVER activate!
-        val current = ScanUtils.currentRoom ?: ScanUtils.getRoomFromPos(playerPos)
-        if (current != null) {
-            return current.data.type == RoomType.BLOOD
-        }
+        // 1. ScanUtils / Map scanner check
+        val room = ScanUtils.getRoomFromPos(playerPos)
+        if (room != null && room.data.type == RoomType.BLOOD) return true
 
-        // 2. Tile bounds check for Blood Room
-        val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
+        // 2. DungeonScanner / HotbarMapScanner grid check
+        val (gx, gz) = ScanUtils.getRoomGraf(playerPos)
+        val dungeonTile = DungeonScanner.dungeonList.getOrNull(gz * 11 + gx)
+        if (dungeonTile is RoomTile && dungeonTile.data.type == RoomType.BLOOD) return true
+
+        val mapTile = HotbarMapScanner.getTile(gx, gz)
+        if (mapTile is RoomTile && mapTile.data.type == RoomType.BLOOD) return true
+
+        // 3. DungeonScanner uniqueRooms check
+        val bloodUnique = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
             ?: DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }?.uniqueRoom
 
-        if (bloodRoom != null) {
-            val tiles = bloodRoom.tiles.filterIsInstance<RoomTile>()
+        if (bloodUnique != null) {
+            val tiles = bloodUnique.tiles.filterIsInstance<RoomTile>()
             if (tiles.isNotEmpty()) {
-                return tiles.any { tile ->
-                    abs(playerPos.x - tile.x) <= 14.5 && abs(playerPos.z - tile.z) <= 14.5
-                }
+                if (tiles.any { abs(playerPos.x - it.x) <= 16.0 && abs(playerPos.z - it.z) <= 16.0 }) return true
+            } else if (abs(playerPos.x - bloodUnique.centerPos.x) <= 16.0 && abs(playerPos.z - bloodUnique.centerPos.z) <= 16.0) {
+                return true
             }
-            return abs(playerPos.x - bloodRoom.centerPos.x) <= 14.5 && abs(playerPos.z - bloodRoom.centerPos.z) <= 14.5
         }
 
-        // 3. Fallback: only if Watcher is active and player is strictly close (< 20 blocks)
-        val watcher = BloodCamp.watcherEntity
-        if (watcher != null && player.distanceTo(watcher) < 20.0 && watcherMessageCount >= 1) {
-            return true
+        // 4. Proximity to The Watcher ArmorStand or Watcher Zombie
+        val level = mc.level
+        if (level != null) {
+            val watcherStand = level.entitiesForRendering().find {
+                it is ArmorStand && it.customName?.string?.contains("The Watcher", ignoreCase = true) == true
+            }
+            if (watcherStand != null && playerPos.distanceTo(watcherStand.position()) < 32.0) {
+                return true
+            }
+
+            val watcherZombie = BloodCamp.watcherEntity
+            if (watcherZombie != null && playerPos.distanceTo(watcherZombie.position()) < 32.0) {
+                return true
+            }
+
+            // 5. Blood mob / Watchful eye proximity check
+            if (watcherMessageCount >= 1) {
+                val bloodStand = level.entitiesForRendering().find {
+                    it is ArmorStand && it.customName?.string?.let { name ->
+                        name.contains("Healthy", ignoreCase = true) || name.contains("Watchful Eye", ignoreCase = true)
+                    } == true
+                }
+                if (bloodStand != null && playerPos.distanceTo(bloodStand.position()) < 25.0) {
+                    return true
+                }
+            }
         }
 
         return false
     }
 
     fun isInsideBloodRoom(vec: Vec3): Boolean {
-        val current = ScanUtils.getRoomFromPos(vec)
-        if (current != null) {
-            return current.data.type == RoomType.BLOOD
-        }
+        if (!LocationUtils.inDungeon || LocationUtils.inBoss) return false
 
-        val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
+        // 1. ScanUtils check
+        val room = ScanUtils.getRoomFromPos(vec)
+        if (room != null && room.data.type == RoomType.BLOOD) return true
+
+        // 2. DungeonScanner / HotbarMapScanner grid check
+        val (gx, gz) = ScanUtils.getRoomGraf(vec)
+        val dungeonTile = DungeonScanner.dungeonList.getOrNull(gz * 11 + gx)
+        if (dungeonTile is RoomTile && dungeonTile.data.type == RoomType.BLOOD) return true
+
+        val mapTile = HotbarMapScanner.getTile(gx, gz)
+        if (mapTile is RoomTile && mapTile.data.type == RoomType.BLOOD) return true
+
+        // 3. DungeonScanner uniqueRooms check
+        val bloodUnique = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
             ?: DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }?.uniqueRoom
 
-        if (bloodRoom != null) {
-            val tiles = bloodRoom.tiles.filterIsInstance<RoomTile>()
+        if (bloodUnique != null) {
+            val tiles = bloodUnique.tiles.filterIsInstance<RoomTile>()
             if (tiles.isNotEmpty()) {
-                return tiles.any { tile ->
-                    abs(vec.x - tile.x) <= 14.5 && abs(vec.z - tile.z) <= 14.5
-                }
+                if (tiles.any { abs(vec.x - it.x) <= 16.0 && abs(vec.z - it.z) <= 16.0 }) return true
+            } else if (abs(vec.x - bloodUnique.centerPos.x) <= 16.0 && abs(vec.z - bloodUnique.centerPos.z) <= 16.0) {
+                return true
             }
-            return abs(vec.x - bloodRoom.centerPos.x) <= 14.5 && abs(vec.z - bloodRoom.centerPos.z) <= 14.5
         }
 
-        val watcher = BloodCamp.watcherEntity
-        if (watcher != null && vec.distanceTo(watcher.position()) < 20.0) return true
+        // 4. Proximity to Watcher
+        val level = mc.level
+        if (level != null) {
+            val watcherStand = level.entitiesForRendering().find {
+                it is ArmorStand && it.customName?.string?.contains("The Watcher", ignoreCase = true) == true
+            }
+            if (watcherStand != null && vec.distanceTo(watcherStand.position()) < 32.0) {
+                return true
+            }
+
+            val watcherZombie = BloodCamp.watcherEntity
+            if (watcherZombie != null && vec.distanceTo(watcherZombie.position()) < 32.0) {
+                return true
+            }
+        }
 
         return false
     }
