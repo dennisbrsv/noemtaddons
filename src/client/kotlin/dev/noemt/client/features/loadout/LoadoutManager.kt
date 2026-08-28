@@ -14,6 +14,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundEvents
 import net.minecraft.world.inventory.ContainerInput
 import net.minecraft.world.inventory.Slot
+import net.minecraft.world.item.ItemStack
 import java.io.File
 import kotlin.random.Random
 
@@ -109,14 +110,12 @@ object LoadoutManager {
 
         ChatUtils.modMessage("&b[Loadout] &aSwapping to: &e${loadout.name} &7(Slot ${loadout.loadoutSlot} | Trigger: &f$reason&7)")
 
-        // Play feedback sound if enabled
         if (ConfigManager.config.loadout.playSound) {
             mc.execute {
                 mc.soundManager.play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_PLING.value(), 1.5f))
             }
         }
 
-        // Notify Remote WebSocket Server
         val payload = JsonObject().apply {
             addProperty("loadoutId", id)
             addProperty("loadoutName", loadout.name)
@@ -147,11 +146,9 @@ object LoadoutManager {
         when (currentStage) {
             SwapStage.PRE_CMD_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    // Send /loadouts command
                     val cmd = loadout.openCommand.takeIf { it.isNotBlank() } ?: "/loadouts"
                     sendClientCommand(cmd)
 
-                    // Stage 2: Wait for /loadouts GUI to open (with 2500ms fallback timeout)
                     guiWaitTimeoutMs = now + 2500L
                     currentStage = SwapStage.WAITING_GUI_OPEN
                 }
@@ -160,7 +157,6 @@ object LoadoutManager {
             SwapStage.WAITING_GUI_OPEN -> {
                 val isGuiOpen = mc.screen is AbstractContainerScreen<*> && player.containerMenu != player.inventoryMenu
                 if (isGuiOpen || inLoadoutMenu) {
-                    // Stage 3: GUI open -> 100ms-ish delay (randomized 85ms - 125ms)
                     val guiOpenDelay = Random.nextLong(85, 125)
                     stageTargetTimeMs = now + guiOpenDelay
                     currentStage = SwapStage.GUI_OPEN_WAIT
@@ -173,14 +169,10 @@ object LoadoutManager {
             SwapStage.GUI_OPEN_WAIT -> {
                 if (now >= stageTargetTimeMs) {
                     val containerId = player.containerMenu.containerId
-
-                    // Target slot in 54-slot chest container: slots [14,15,16, 23,24,25, 32,33,34, 41,42,43]
                     val targetSlot = loadout.containerSlot
 
-                    // Click the loadout slot
                     mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
 
-                    // Stage 4: Post-click delay -> 100ms-ish delay (randomized 85ms - 125ms)
                     val postClickDelay = Random.nextLong(85, 125)
                     stageTargetTimeMs = now + postClickDelay
                     currentStage = SwapStage.POST_CLICK_WAIT
@@ -189,27 +181,21 @@ object LoadoutManager {
 
             SwapStage.POST_CLICK_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    // Stage 5: Close the /loadouts GUI
                     player.closeContainer()
                     mc.setScreen(null)
-
-                    // Stage 6: Post-swap actions (Hotbar slot, Pet, custom commands)
                     currentStage = SwapStage.POST_ACTIONS
                 }
             }
 
             SwapStage.POST_ACTIONS -> {
-                // Hotbar slot swap
                 loadout.slot?.let { s ->
                     PlayerUtils.swapToSlot(s)
                 }
 
-                // Pet command if specified
                 loadout.petName?.takeIf { it.isNotBlank() }?.let { pet ->
                     sendClientCommand("/pet $pet")
                 }
 
-                // Additional custom commands
                 for (extraCmd in loadout.commands) {
                     if (extraCmd.isNotBlank()) {
                         sendClientCommand(extraCmd)
@@ -232,18 +218,49 @@ object LoadoutManager {
         pendingAutoClose = false
     }
 
-    // In-Menu fast keybind click (slots 0..11 corresponding to Loadouts 1..12)
+    // Auto-sync loadouts from SkyBlock container items
+    fun syncFromContainerItems(items: List<ItemStack>) {
+        var syncedCount = 0
+        for ((index, containerSlot) in SkyblockLoadoutConstants.LOADOUT_SLOTS.withIndex()) {
+            val loadoutNum = index + 1
+            val item = items.getOrNull(containerSlot) ?: continue
+            if (item.isEmpty) continue
+
+            val rawName = item.hoverName.string.replace(Regex("§[0-9a-fk-or]"), "").trim()
+            if (rawName.isBlank() || rawName.equals("Empty", ignoreCase = true)) continue
+
+            val id = "loadout_$loadoutNum"
+            val existing = loadouts[id]
+
+            if (existing != null) {
+                existing.name = rawName
+                existing.loadoutSlot = loadoutNum
+            } else {
+                loadouts[id] = Loadout(
+                    id = id,
+                    name = rawName,
+                    loadoutSlot = loadoutNum,
+                    openCommand = "/loadouts",
+                    slot = if (index < 9) index else null
+                )
+            }
+            syncedCount++
+        }
+
+        if (syncedCount > 0) {
+            saveData()
+            ChatUtils.modMessage("&b[Loadout] &aAuto-synced &e$syncedCount &aloadouts from SkyBlock /loadouts menu!")
+        }
+    }
+
     fun clickMenuSlot(index: Int, autoClose: Boolean = true) {
         val player = mc.player ?: return
         if (index !in 0..11) return
         val slot = SkyblockLoadoutConstants.LOADOUT_SLOTS[index]
-        if (!isSlotEquipable(slot)) return
-
         val containerId = player.containerMenu.containerId
         mc.gameMode?.handleContainerInput(containerId, slot, 0, ContainerInput.PICKUP, player)
         lastManualClick = System.currentTimeMillis()
 
-        // Track in memory
         val targetLoadout = loadouts.values.find { it.loadoutSlot == (index + 1) }
         if (targetLoadout != null) {
             if (currentLoadoutId != targetLoadout.id) {
@@ -258,16 +275,14 @@ object LoadoutManager {
         }
     }
 
-    private fun isSlotEquipable(slot: Int): Boolean {
-        val player = mc.player ?: return false
-        val itemSlot = player.containerMenu.getSlot(slot).takeIf(Slot::hasItem) ?: return false
-        return !itemSlot.item.isEmpty
-    }
-
     private fun resetSwap() {
         currentStage = SwapStage.IDLE
         pendingLoadout = null
         stageTargetTimeMs = 0L
+    }
+
+    fun requestSkyblockSync() {
+        sendClientCommand("/loadouts")
     }
 
     private fun sendClientCommand(command: String) {
@@ -327,41 +342,22 @@ object LoadoutManager {
     }
 
     private fun setupDefaults() {
-        loadouts["loadout_1"] = Loadout(
-            id = "loadout_1",
-            name = "Clear / Speed",
-            loadoutSlot = 1,
-            openCommand = "/loadouts",
-            slot = 0,
-            delayMs = 100L
-        )
-
-        loadouts["loadout_2"] = Loadout(
-            id = "loadout_2",
-            name = "Boss / DPS",
-            loadoutSlot = 2,
-            openCommand = "/loadouts",
-            slot = 1,
-            delayMs = 100L
-        )
-
-        loadouts["loadout_3"] = Loadout(
-            id = "loadout_3",
-            name = "Tank / Survivability",
-            loadoutSlot = 3,
-            openCommand = "/loadouts",
-            slot = 2,
-            delayMs = 100L
-        )
-
-        loadouts["loadout_4"] = Loadout(
-            id = "loadout_4",
-            name = "Utility / Magic",
-            loadoutSlot = 4,
-            openCommand = "/loadouts",
-            slot = 3,
-            delayMs = 100L
-        )
+        for (i in 1..12) {
+            val defaultName = when (i) {
+                1 -> "Loadout 1 (Clear / Speed)"
+                2 -> "Loadout 2 (Boss / DPS)"
+                3 -> "Loadout 3 (Tank / EHP)"
+                4 -> "Loadout 4 (Magic / Utility)"
+                else -> "Loadout $i"
+            }
+            loadouts["loadout_$i"] = Loadout(
+                id = "loadout_$i",
+                name = defaultName,
+                loadoutSlot = i,
+                openCommand = "/loadouts",
+                slot = if (i <= 9) (i - 1) else null
+            )
+        }
 
         // Default Rules
         rules.add(
@@ -420,7 +416,7 @@ object LoadoutManager {
                 }
             }
         } catch (e: Exception) {
-            ChatUtils.modMessage("&cFailed loading loadouts.json: ${e.message}")
+            // fallback
         }
 
         try {
@@ -433,7 +429,7 @@ object LoadoutManager {
                 }
             }
         } catch (e: Exception) {
-            // Use defaults
+            // fallback
         }
     }
 

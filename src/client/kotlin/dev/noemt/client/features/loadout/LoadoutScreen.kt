@@ -9,339 +9,292 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import java.awt.Color
 
-class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
+class LoadoutScreen : Screen(Component.literal("NoemtAddons Auto Loadout Swapper")) {
     private val mcInstance: Minecraft get() = Minecraft.getInstance()
 
-    private enum class Tab {
-        LOADOUTS,
-        RULES,
-        BUILDER,
-        TIMING
-    }
-
-    private var activeTab = Tab.LOADOUTS
-
-    // Inputs for Rule Builder Tab
-    private var ruleNameBox: EditBox? = null
-    private var patternBox: EditBox? = null
-    private var customNameBox: EditBox? = null
+    // Rule Builder Inputs
+    private var builderTriggerType = "INSTANCE" // "INSTANCE", "AIM", "CHAT"
+    private var builderGameInstance = GameInstanceType.DUNGEONS
+    private var builderMobCategory = MobCategory.BLOOD_MOB
+    private var builderTargetSlot = 1
+    private var chatPatternBox: EditBox? = null
     private var cooldownBox: EditBox? = null
 
-    private var builderConditionType = "AIM" // "AIM", "CHAT", "PROXIMITY", "LOCATION"
-    private var builderMobCategory = MobCategory.BLOOD_MOB
-    private var builderTargetLoadout = "loadout_2"
-    private var builderMatchType = MatchType.CONTAINS
-
-    private var scrollOffset = 0
+    private var scrollOffsetLeft = 0
+    private var scrollOffsetRight = 0
 
     override fun init() {
         clearWidgets()
-        val cardWidth = (width * 0.88f).coerceIn(460f, 760f).toInt()
-        val cardHeight = (height * 0.82f).coerceIn(300f, 540f).toInt()
+        val cardWidth = (width * 0.94f).coerceIn(540f, 880f).toInt()
+        val cardHeight = (height * 0.88f).coerceIn(340f, 580f).toInt()
         val cardX = (width - cardWidth) / 2
         val cardY = (height - cardHeight) / 2
 
-        // Top Navigation Tab Buttons
-        val tabWidth = 100
-        val tabHeight = 20
-        var tabStartX = cardX + 16
-        val tabY = cardY + 34
+        val colWidth = (cardWidth - 44) / 2
+        val leftX = cardX + 16
+        val rightX = leftX + colWidth + 12
 
-        for (tab in Tab.values()) {
-            val label = when (tab) {
-                Tab.LOADOUTS -> "📦 Loadouts (1-12)"
-                Tab.RULES -> "⚡ Active Rules"
-                Tab.BUILDER -> "🛠️ New Rule"
-                Tab.TIMING -> "⏱️ Settings"
-            }
-            val isCurrent = tab == activeTab
-            addRenderableWidget(
-                Button.builder(Component.literal(if (isCurrent) "§b§l$label" else "§7$label")) {
-                    activeTab = tab
-                    scrollOffset = 0
-                    init()
-                }.bounds(tabStartX, tabY, tabWidth, tabHeight).build()
-            )
-            tabStartX += tabWidth + 6
-        }
+        // Top Actions
+        addRenderableWidget(
+            Button.builder(Component.literal("⚡ Sync SkyBlock (/loadouts)")) {
+                LoadoutManager.requestSkyblockSync()
+            }.bounds(cardX + cardWidth - 260, cardY + 8, 175, 20).build()
+        )
 
-        // Close Button
         addRenderableWidget(
             Button.builder(Component.literal("§c✕ Close")) {
                 onClose()
             }.bounds(cardX + cardWidth - 75, cardY + 8, 65, 20).build()
         )
 
-        // Initialize Widgets based on Tab
-        when (activeTab) {
-            Tab.LOADOUTS -> initLoadoutsTab(cardX, cardY, cardWidth, cardHeight)
-            Tab.RULES -> initRulesTab(cardX, cardY, cardWidth, cardHeight)
-            Tab.BUILDER -> initBuilderTab(cardX, cardY, cardWidth, cardHeight)
-            Tab.TIMING -> initTimingTab(cardX, cardY, cardWidth, cardHeight)
-        }
-    }
+        // Left Column: 12 SkyBlock Loadout Slots
+        var rowY = cardY + 56 - scrollOffsetLeft
+        for (i in 1..12) {
+            val id = "loadout_$i"
+            val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $i", loadoutSlot = i)
 
-    private fun initLoadoutsTab(cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        var btnY = cardY + 70 - scrollOffset
-        val loadoutList = LoadoutManager.loadouts.values.toList()
-
-        for (lo in loadoutList) {
-            if (btnY in (cardY + 60)..(cardY + cardHeight - 50)) {
+            if (rowY in (cardY + 50)..(cardY + cardHeight - 65)) {
                 val currentLo = lo
                 // Equip button
                 addRenderableWidget(
-                    Button.builder(Component.literal("⚡ Equip")) {
+                    Button.builder(Component.literal("⚡")) {
                         LoadoutManager.swapTo(currentLo.id, "GUI Equip")
                         init()
-                    }.bounds(cardX + cardWidth - 210, btnY + 4, 60, 18).build()
+                    }.bounds(leftX + colWidth - 110, rowY + 3, 26, 18).build()
                 )
 
-                // Set as Toggle A
+                // Set Toggle A
                 val isA = LoadoutManager.loadoutAId == currentLo.id
                 addRenderableWidget(
-                    Button.builder(Component.literal(if (isA) "§a[A Active]" else "Set A")) {
+                    Button.builder(Component.literal(if (isA) "§a[A]" else "A")) {
                         LoadoutManager.loadoutAId = currentLo.id
                         init()
-                    }.bounds(cardX + cardWidth - 145, btnY + 4, 65, 18).build()
+                    }.bounds(leftX + colWidth - 80, rowY + 3, 36, 18).build()
                 )
 
-                // Set as Toggle B
+                // Set Toggle B
                 val isB = LoadoutManager.loadoutBId == currentLo.id
                 addRenderableWidget(
-                    Button.builder(Component.literal(if (isB) "§e[B Active]" else "Set B")) {
+                    Button.builder(Component.literal(if (isB) "§e[B]" else "B")) {
                         LoadoutManager.loadoutBId = currentLo.id
                         init()
-                    }.bounds(cardX + cardWidth - 75, btnY + 4, 65, 18).build()
+                    }.bounds(leftX + colWidth - 40, rowY + 3, 36, 18).build()
                 )
             }
-            btnY += 46
+            rowY += 32
         }
 
-        // Toggle A/B Test Button
-        addRenderableWidget(
-            Button.builder(Component.literal("🔄 Test Toggle (A ⇄ B)")) {
-                LoadoutManager.toggleAB()
-                init()
-            }.bounds(cardX + 16, cardY + cardHeight - 32, 160, 22).build()
-        )
-    }
+        // Right Column: Active Rules List & Rule Builder
+        var ruleY = cardY + 56 - scrollOffsetRight
+        val ruleList = LoadoutManager.rules.toList()
 
-    private fun initRulesTab(cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        var rowY = cardY + 70 - scrollOffset
-        val rulesList = LoadoutManager.rules.toList()
-
-        for (rule in rulesList) {
-            if (rowY in (cardY + 60)..(cardY + cardHeight - 50)) {
+        for (rule in ruleList) {
+            if (ruleY in (cardY + 50)..(cardY + cardHeight - 170)) {
                 val r = rule
-                // Toggle Enable/Disable
                 val toggleLabel = if (r.enabled) "§a● ON" else "§c○ OFF"
                 addRenderableWidget(
                     Button.builder(Component.literal(toggleLabel)) {
                         r.enabled = !r.enabled
                         LoadoutManager.saveData()
                         init()
-                    }.bounds(cardX + cardWidth - 180, rowY + 4, 65, 18).build()
+                    }.bounds(rightX + colWidth - 95, ruleY + 3, 50, 18).build()
                 )
 
-                // Delete rule button
                 addRenderableWidget(
-                    Button.builder(Component.literal("§c🗑 Delete")) {
+                    Button.builder(Component.literal("§c🗑")) {
                         LoadoutManager.removeRule(r.id)
                         init()
-                    }.bounds(cardX + cardWidth - 105, rowY + 4, 90, 18).build()
+                    }.bounds(rightX + colWidth - 40, ruleY + 3, 36, 18).build()
                 )
             }
-            rowY += 44
+            ruleY += 32
         }
 
-        // Add Rule Shortcut
-        addRenderableWidget(
-            Button.builder(Component.literal("➕ Create New Rule")) {
-                activeTab = Tab.BUILDER
-                init()
-            }.bounds(cardX + 16, cardY + cardHeight - 32, 140, 22).build()
+        // Right Column Bottom: Rule Builder Form
+        val builderY = cardY + cardHeight - 150
+
+        // 1. Trigger Type Selector
+        val triggerTypes = listOf(
+            "INSTANCE" to "🏰 Game Instance",
+            "AIM" to "🎯 Mob Aim",
+            "CHAT" to "💬 Chat Msg"
         )
-    }
-
-    private fun initBuilderTab(cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        val formX = cardX + 120
-        var formY = cardY + 66
-
-        // 1. Rule Name
-        val nameBox = EditBox(font, formX, formY, 220, 18, Component.literal("Rule Name"))
-        nameBox.value = "Auto DPS Swap"
-        addRenderableWidget(nameBox)
-        ruleNameBox = nameBox
-        formY += 26
-
-        // 2. Condition Type Selector Buttons
-        val condTypes = listOf("AIM" to "🎯 Mob Aim", "CHAT" to "💬 Chat Msg", "PROXIMITY" to "📍 Proximity", "LOCATION" to "🗺️ Area")
-        var cX = formX
-        for ((typeKey, typeLabel) in condTypes) {
-            val isSelected = builderConditionType == typeKey
+        var tX = rightX
+        for ((tKey, tLabel) in triggerTypes) {
+            val isSel = builderTriggerType == tKey
             addRenderableWidget(
-                Button.builder(Component.literal(if (isSelected) "§b§l$typeLabel" else "§7$typeLabel")) {
-                    builderConditionType = typeKey
+                Button.builder(Component.literal(if (isSel) "§b§l$tLabel" else "§7$tLabel")) {
+                    builderTriggerType = tKey
                     init()
-                }.bounds(cX, formY, 78, 18).build()
+                }.bounds(tX, builderY + 16, 110, 18).build()
             )
-            cX += 82
+            tX += 114
         }
-        formY += 26
 
-        // 3. Sub-options depending on condition type
-        if (builderConditionType in listOf("AIM", "PROXIMITY")) {
+        // 2. Specific Sub-options
+        if (builderTriggerType == "INSTANCE") {
+            val instances = listOf(
+                GameInstanceType.DUNGEONS to "Dungeons",
+                GameInstanceType.DUNGEON_BOSS to "Boss Room",
+                GameInstanceType.KUUDRA to "Kuudra",
+                GameInstanceType.GARDEN to "Garden",
+                GameInstanceType.MINING to "Mining",
+                GameInstanceType.THE_END to "The End",
+                GameInstanceType.CRIMSON_ISLE to "Crimson Isle"
+            )
+            var instX = rightX
+            for ((instEnum, instLabel) in instances) {
+                val isSel = builderGameInstance == instEnum
+                addRenderableWidget(
+                    Button.builder(Component.literal(if (isSel) "§a§l$instLabel" else "§7$instLabel")) {
+                        builderGameInstance = instEnum
+                        init()
+                    }.bounds(instX, builderY + 38, 76, 18).build()
+                )
+                instX += 79
+                if (instX > rightX + colWidth - 76) {
+                    instX = rightX
+                }
+            }
+        } else if (builderTriggerType == "AIM") {
             val cats = listOf(
-                MobCategory.BLOOD_MOB to "Blood Mob",
+                MobCategory.BLOOD_MOB to "Blood Mobs",
                 MobCategory.WATCHER to "Watcher",
                 MobCategory.MINIBOSS to "Miniboss",
                 MobCategory.BOSS to "Boss",
-                MobCategory.SLAYER to "Slayer",
-                MobCategory.CUSTOM_NAME to "Custom Name"
+                MobCategory.SLAYER to "Slayer"
             )
-            var catX = formX
+            var catX = rightX
             for ((catEnum, catLabel) in cats) {
                 val isSel = builderMobCategory == catEnum
                 addRenderableWidget(
                     Button.builder(Component.literal(if (isSel) "§a§l$catLabel" else "§7$catLabel")) {
                         builderMobCategory = catEnum
                         init()
-                    }.bounds(catX, formY, 74, 18).build()
+                    }.bounds(catX, builderY + 38, 72, 18).build()
                 )
-                catX += 78
-                if (catX > formX + 280) {
-                    catX = formX
-                    formY += 22
-                }
+                catX += 75
             }
-            formY += 26
-
-            val customBox = EditBox(font, formX, formY, 220, 18, Component.literal("Name Filter (Optional)"))
-            customBox.setHint(Component.literal("e.g. Livid, Necron, Shadow Assassin"))
-            addRenderableWidget(customBox)
-            customNameBox = customBox
-            formY += 26
-        } else if (builderConditionType == "CHAT") {
-            val modes = listOf(MatchType.CONTAINS to "CONTAINS", MatchType.STARTS_WITH to "STARTS_WITH", MatchType.REGEX to "REGEX")
-            var mX = formX
-            for ((modeEnum, modeLabel) in modes) {
-                val isSel = builderMatchType == modeEnum
-                addRenderableWidget(
-                    Button.builder(Component.literal(if (isSel) "§e§l$modeLabel" else "§7$modeLabel")) {
-                        builderMatchType = modeEnum
-                        init()
-                    }.bounds(mX, formY, 90, 18).build()
-                )
-                mX += 94
-            }
-            formY += 26
-
-            val pBox = EditBox(font, formX, formY, 260, 18, Component.literal("Chat Pattern"))
-            pBox.value = "[BOSS] "
+        } else if (builderTriggerType == "CHAT") {
+            val pBox = EditBox(font, rightX + 60, builderY + 38, colWidth - 60, 18, Component.literal("Pattern"))
+            pBox.value = "[BOSS]"
             addRenderableWidget(pBox)
-            patternBox = pBox
-            formY += 26
+            chatPatternBox = pBox
         }
 
-        // 4. Target Loadout Selector
-        var loX = formX
-        for ((loId, loObj) in LoadoutManager.loadouts) {
-            val isTarget = builderTargetLoadout == loId
+        // 3. Target Slot Selector (1..12)
+        var slotBtnX = rightX
+        for (s in 1..6) {
+            val isSel = builderTargetSlot == s
             addRenderableWidget(
-                Button.builder(Component.literal(if (isTarget) "§6§l${loObj.name}" else "§7${loObj.name}")) {
-                    builderTargetLoadout = loId
+                Button.builder(Component.literal(if (isSel) "§6§lSlot $s" else "§7S$s")) {
+                    builderTargetSlot = s
                     init()
-                }.bounds(loX, formY, 95, 18).build()
+                }.bounds(slotBtnX, builderY + 62, 56, 18).build()
             )
-            loX += 100
+            slotBtnX += 59
         }
-        formY += 26
 
-        // 5. Cooldown Box
-        val cdBox = EditBox(font, formX, formY, 80, 18, Component.literal("Cooldown (s)"))
-        cdBox.value = "2.5"
-        addRenderableWidget(cdBox)
-        cooldownBox = cdBox
-        formY += 30
+        slotBtnX = rightX
+        for (s in 7..12) {
+            val isSel = builderTargetSlot == s
+            addRenderableWidget(
+                Button.builder(Component.literal(if (isSel) "§6§lSlot $s" else "§7S$s")) {
+                    builderTargetSlot = s
+                    init()
+                }.bounds(slotBtnX, builderY + 82, 56, 18).build()
+            )
+            slotBtnX += 59
+        }
 
-        // Create Button
+        // Cooldown Box
+        val cd = EditBox(font, rightX + 90, builderY + 104, 45, 18, Component.literal("Cooldown"))
+        cd.value = "2.5"
+        addRenderableWidget(cd)
+        cooldownBox = cd
+
+        // Add Rule Button
         addRenderableWidget(
-            Button.builder(Component.literal("§a✔ Create & Save Rule")) {
-                val rName = ruleNameBox?.value?.ifBlank { "Custom Rule" } ?: "Custom Rule"
-                val rId = "rule_" + System.currentTimeMillis()
-                val cd = cooldownBox?.value?.toDoubleOrNull() ?: 2.0
+            Button.builder(Component.literal("§a➕ Save Auto-Swap Rule")) {
+                val targetId = "loadout_$builderTargetSlot"
+                val cdVal = cooldownBox?.value?.toDoubleOrNull() ?: 2.5
 
-                val condition: LoadoutCondition = when (builderConditionType) {
-                    "AIM" -> LoadoutCondition.AimCondition(
-                        mobCategory = builderMobCategory,
-                        nameFilter = customNameBox?.value?.takeIf { it.isNotBlank() }
-                    )
-                    "PROXIMITY" -> LoadoutCondition.ProximityCondition(
-                        mobCategory = builderMobCategory,
-                        nameFilter = customNameBox?.value?.takeIf { it.isNotBlank() }
-                    )
-                    "CHAT" -> LoadoutCondition.ChatCondition(
-                        pattern = patternBox?.value ?: "[BOSS]",
-                        matchType = builderMatchType
-                    )
-                    else -> LoadoutCondition.AimCondition(mobCategory = MobCategory.BLOOD_MOB)
+                val (ruleName, condition) = when (builderTriggerType) {
+                    "INSTANCE" -> {
+                        val instName = builderGameInstance.name.replace("_", " ")
+                        "Join $instName" to LoadoutCondition.GameInstanceCondition(instanceType = builderGameInstance)
+                    }
+                    "AIM" -> {
+                        val catName = builderMobCategory.name.replace("_", " ")
+                        "Aim at $catName" to LoadoutCondition.AimCondition(mobCategory = builderMobCategory)
+                    }
+                    "CHAT" -> {
+                        val pat = chatPatternBox?.value ?: "[BOSS]"
+                        "Chat: $pat" to LoadoutCondition.ChatCondition(pattern = pat, matchType = MatchType.CONTAINS)
+                    }
+                    else -> "Rule" to LoadoutCondition.AimCondition(mobCategory = MobCategory.BLOOD_MOB)
                 }
 
                 val newRule = LoadoutRule(
-                    id = rId,
-                    name = rName,
+                    id = "rule_${System.currentTimeMillis()}",
+                    name = ruleName,
                     enabled = true,
-                    targetLoadoutId = builderTargetLoadout,
+                    targetLoadoutId = targetId,
                     condition = condition,
-                    cooldownSeconds = cd
+                    cooldownSeconds = cdVal
                 )
 
                 LoadoutManager.addOrUpdateRule(newRule)
-                activeTab = Tab.RULES
                 init()
-            }.bounds(cardX + 16, cardY + cardHeight - 34, 180, 22).build()
+            }.bounds(rightX + 145, builderY + 104, colWidth - 145, 18).build()
         )
-    }
 
-    private fun initTimingTab(cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
+        // Bottom Bar Settings
+        val bottomY = cardY + cardHeight - 26
         val config = ConfigManager.config.loadout
-        var sY = cardY + 70
 
-        // Toggle Master Swapper
         addRenderableWidget(
-            Button.builder(Component.literal(if (config.enabled) "§a● Swapper Enabled" else "§c○ Swapper Disabled")) {
+            Button.builder(Component.literal(if (config.enabled) "§a● Swapper ENABLED" else "§c○ Swapper DISABLED")) {
                 config.enabled = !config.enabled
                 init()
-            }.bounds(cardX + 20, sY, 170, 20).build()
+            }.bounds(cardX + 16, bottomY, 150, 18).build()
         )
 
-        // Toggle HUD Display
         addRenderableWidget(
-            Button.builder(Component.literal(if (config.showHud) "§a● HUD Display ON" else "§7○ HUD Display OFF")) {
+            Button.builder(Component.literal(if (config.showHud) "§a● HUD ON" else "§7○ HUD OFF")) {
                 config.showHud = !config.showHud
                 init()
-            }.bounds(cardX + 200, sY, 160, 20).build()
+            }.bounds(cardX + 175, bottomY, 95, 18).build()
         )
 
-        // Toggle Sound
         addRenderableWidget(
             Button.builder(Component.literal(if (config.playSound) "§a● Sound ON" else "§7○ Sound OFF")) {
                 config.playSound = !config.playSound
                 init()
-            }.bounds(cardX + 370, sY, 130, 20).build()
+            }.bounds(cardX + 278, bottomY, 95, 18).build()
+        )
+
+        addRenderableWidget(
+            Button.builder(Component.literal("🔄 Test Toggle (V)")) {
+                LoadoutManager.toggleAB()
+                init()
+            }.bounds(cardX + cardWidth - 150, bottomY, 134, 18).build()
         )
     }
 
     override fun extractRenderState(graphics: GuiGraphicsExtractor, mouseX: Int, mouseY: Int, partialTick: Float) {
-        // Dark translucent background
         graphics.fill(0, 0, width, height, Color(0, 0, 0, 195).rgb)
 
-        val cardWidth = (width * 0.88f).coerceIn(460f, 760f).toInt()
-        val cardHeight = (height * 0.82f).coerceIn(300f, 540f).toInt()
+        val cardWidth = (width * 0.94f).coerceIn(540f, 880f).toInt()
+        val cardHeight = (height * 0.88f).coerceIn(340f, 580f).toInt()
         val cardX = (width - cardWidth) / 2
         val cardY = (height - cardHeight) / 2
 
-        // Card body & cyan border
+        val colWidth = (cardWidth - 44) / 2
+        val leftX = cardX + 16
+        val rightX = leftX + colWidth + 12
+
+        // Card Border & Background
         val borderColor = Color(0, 195, 255, 230).rgb
         graphics.fill(cardX, cardY, cardX + cardWidth, cardY + cardHeight, Color(16, 20, 30, 245).rgb)
         graphics.fill(cardX, cardY, cardX + cardWidth, cardY + 1, borderColor)
@@ -351,119 +304,84 @@ class LoadoutScreen : Screen(Component.literal("NoemtAddons Loadout Builder")) {
 
         // Header Title
         val currentLo = LoadoutManager.getCurrentLoadout()?.name ?: "None"
-        graphics.text(font, "§b§lNoemtAddons §8• §fSkyBlock Loadouts & Conditional Swapper §c[CHEAT]", cardX + 16, cardY + 12, Color.WHITE.rgb, true)
-        graphics.text(font, "§7Active: §e$currentLo §8| §7Toggle Pair: §b${LoadoutManager.loadoutAId} §7⇄ §b${LoadoutManager.loadoutBId} §8| §7Command: §e/loadouts", cardX + 16, cardY + 22, Color.LIGHT_GRAY.rgb, false)
+        val loAName = LoadoutManager.loadouts[LoadoutManager.loadoutAId]?.name ?: LoadoutManager.loadoutAId
+        val loBName = LoadoutManager.loadouts[LoadoutManager.loadoutBId]?.name ?: LoadoutManager.loadoutBId
 
-        // Subheader line
-        graphics.fill(cardX + 16, cardY + 58, cardX + cardWidth - 16, cardY + 59, Color(50, 65, 90, 255).rgb)
+        graphics.text(font, "§b§lNoemtAddons §8• §fAuto Loadout Swapper §c[CHEAT]", cardX + 16, cardY + 10, Color.WHITE.rgb, true)
+        graphics.text(font, "§7Active: §e$currentLo §8| §7Toggle Pair: §a[A: $loAName] §7⇄ §e[B: $loBName]", cardX + 16, cardY + 22, Color.LIGHT_GRAY.rgb, false)
 
-        // Tab Content Rendering
-        when (activeTab) {
-            Tab.LOADOUTS -> renderLoadoutsTab(graphics, cardX, cardY, cardWidth, cardHeight)
-            Tab.RULES -> renderRulesTab(graphics, cardX, cardY, cardWidth, cardHeight)
-            Tab.BUILDER -> renderBuilderTab(graphics, cardX, cardY, cardWidth, cardHeight)
-            Tab.TIMING -> renderTimingTab(graphics, cardX, cardY, cardWidth, cardHeight)
+        // Separators
+        graphics.fill(cardX + 16, cardY + 36, cardX + cardWidth - 16, cardY + 37, Color(50, 65, 90, 255).rgb)
+        graphics.fill(leftX + colWidth + 5, cardY + 40, leftX + colWidth + 6, cardY + cardHeight - 34, Color(40, 52, 72, 200).rgb)
+        graphics.fill(cardX + 16, cardY + cardHeight - 32, cardX + cardWidth - 16, cardY + cardHeight - 31, Color(50, 65, 90, 255).rgb)
+
+        // Column Titles
+        graphics.text(font, "§b§l1. SkyBlock Loadouts (Auto-Synced)", leftX, cardY + 42, Color.WHITE.rgb, true)
+        graphics.text(font, "§b§l2. Conditional Auto-Swap Rules", rightX, cardY + 42, Color.WHITE.rgb, true)
+
+        // Render Left Column: Loadouts
+        var rowY = cardY + 56 - scrollOffsetLeft
+        for (i in 1..12) {
+            val id = "loadout_$i"
+            val lo = LoadoutManager.loadouts[id] ?: Loadout(id = id, name = "Loadout $i", loadoutSlot = i)
+
+            if (rowY in (cardY + 50)..(cardY + cardHeight - 65)) {
+                val isActive = LoadoutManager.currentLoadoutId == lo.id
+                val rowBg = if (isActive) Color(30, 48, 75, 220).rgb else Color(22, 28, 40, 180).rgb
+                graphics.fill(leftX, rowY, leftX + colWidth, rowY + 26, rowBg)
+
+                val badge = "§6S$i: "
+                val nameDisplay = lo.name.take(24)
+                graphics.text(font, "$badge§f$nameDisplay", leftX + 6, rowY + 8, Color.WHITE.rgb, true)
+            }
+            rowY += 32
         }
+
+        // Render Right Column: Active Rules
+        var ruleY = cardY + 56 - scrollOffsetRight
+        val ruleList = LoadoutManager.rules.toList()
+
+        if (ruleList.isEmpty()) {
+            graphics.text(font, "§7No rules yet. Add one below!", rightX + 6, cardY + 65, Color.GRAY.rgb, false)
+        } else {
+            for (rule in ruleList) {
+                if (ruleY in (cardY + 50)..(cardY + cardHeight - 170)) {
+                    val rowBg = if (rule.enabled) Color(24, 36, 54, 200).rgb else Color(20, 24, 32, 160).rgb
+                    graphics.fill(rightX, ruleY, rightX + colWidth, ruleY + 26, rowBg)
+
+                    val targetLo = LoadoutManager.loadouts[rule.targetLoadoutId]?.name ?: rule.targetLoadoutId
+                    graphics.text(font, "§f${rule.name} §7➜ §6$targetLo", rightX + 6, ruleY + 8, Color.WHITE.rgb, true)
+                }
+                ruleY += 32
+            }
+        }
+
+        // Render Rule Builder Section Header
+        val builderY = cardY + cardHeight - 150
+        graphics.fill(rightX, builderY - 6, rightX + colWidth, builderY - 5, Color(50, 65, 90, 200).rgb)
+        graphics.text(font, "§e§l➕ Add Rule (Instance / Aim / Chat ➜ Auto-Swap):", rightX, builderY + 2, Color.YELLOW.rgb, true)
+        if (builderTriggerType == "CHAT") {
+            graphics.text(font, "§7Pattern:", rightX + 6, builderY + 42, Color.LIGHT_GRAY.rgb, false)
+        }
+        graphics.text(font, "§7Cooldown:", rightX + 20, builderY + 108, Color.LIGHT_GRAY.rgb, false)
 
         super.extractRenderState(graphics, mouseX, mouseY, partialTick)
     }
 
-    private fun renderLoadoutsTab(graphics: GuiGraphicsExtractor, cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        var rowY = cardY + 70 - scrollOffset
-        val loadoutList = LoadoutManager.loadouts.values.toList()
-
-        for (lo in loadoutList) {
-            if (rowY in (cardY + 60)..(cardY + cardHeight - 55)) {
-                val isActive = LoadoutManager.currentLoadoutId == lo.id
-                val rowBg = if (isActive) Color(30, 45, 70, 200).rgb else Color(22, 28, 42, 180).rgb
-                graphics.fill(cardX + 16, rowY, cardX + cardWidth - 16, rowY + 38, rowBg)
-
-                val activeTag = if (isActive) " §a[EQUIPPED]" else ""
-                graphics.text(font, "§e§l${lo.name} §7(${lo.id})$activeTag", cardX + 24, rowY + 6, Color.WHITE.rgb, true)
-                graphics.text(font, "§7SkyBlock Loadout: §fSlot ${lo.loadoutSlot} §8(Chest slot ${lo.containerSlot}) | §7Hotbar: §f${lo.slot?.let { it + 1 } ?: "None"} | §7Pet: §f${lo.petName ?: "None"}", cardX + 24, rowY + 20, Color.LIGHT_GRAY.rgb, false)
-            }
-            rowY += 46
-        }
-    }
-
-    private fun renderRulesTab(graphics: GuiGraphicsExtractor, cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        var rowY = cardY + 70 - scrollOffset
-        val rulesList = LoadoutManager.rules.toList()
-
-        if (rulesList.isEmpty()) {
-            graphics.centeredText(font, "§7No conditional rules configured. Click 'Create New Rule' below.", width / 2, cardY + 110, Color.GRAY.rgb)
-            return
-        }
-
-        for (rule in rulesList) {
-            if (rowY in (cardY + 60)..(cardY + cardHeight - 55)) {
-                val rowBg = if (rule.enabled) Color(24, 34, 52, 190).rgb else Color(20, 24, 32, 150).rgb
-                graphics.fill(cardX + 16, rowY, cardX + cardWidth - 16, rowY + 36, rowBg)
-
-                val stateColor = if (rule.enabled) "§a" else "§c"
-                graphics.text(font, "$stateColor${rule.name} §7➜ §6${rule.targetLoadoutId}", cardX + 24, rowY + 6, Color.WHITE.rgb, true)
-
-                val condDesc = when (val c = rule.condition) {
-                    is LoadoutCondition.AimCondition -> "Trigger: Aim at §b${c.mobCategory} §7(dist: ${c.maxDistance}m)"
-                    is LoadoutCondition.ChatCondition -> "Trigger: Chat matches §e\"${c.pattern}\" §7(${c.matchType})"
-                    is LoadoutCondition.ProximityCondition -> "Trigger: Mob §b${c.mobCategory} §7within ${c.radius}m"
-                    is LoadoutCondition.LocationCondition -> "Trigger: Area §b${c.areaName}"
-                    else -> "Trigger: Composite Condition"
-                }
-                graphics.text(font, "§7$condDesc §8| §7CD: §f${rule.cooldownSeconds}s", cardX + 24, rowY + 20, Color.LIGHT_GRAY.rgb, false)
-            }
-            rowY += 44
-        }
-    }
-
-    private fun renderBuilderTab(graphics: GuiGraphicsExtractor, cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        var lY = cardY + 70
-        graphics.text(font, "§bRule Name:", cardX + 20, lY, Color.WHITE.rgb, false)
-        lY += 26
-        graphics.text(font, "§bTrigger Type:", cardX + 20, lY, Color.WHITE.rgb, false)
-        lY += 26
-
-        if (builderConditionType in listOf("AIM", "PROXIMITY")) {
-            graphics.text(font, "§bMob Category:", cardX + 20, lY, Color.WHITE.rgb, false)
-            lY += 26
-            graphics.text(font, "§bName Filter:", cardX + 20, lY, Color.WHITE.rgb, false)
-            lY += 26
-        } else if (builderConditionType == "CHAT") {
-            graphics.text(font, "§bMatch Mode:", cardX + 20, lY, Color.WHITE.rgb, false)
-            lY += 26
-            graphics.text(font, "§bChat Pattern:", cardX + 20, lY, Color.WHITE.rgb, false)
-            lY += 26
-        }
-
-        graphics.text(font, "§bTarget Loadout:", cardX + 20, lY, Color.WHITE.rgb, false)
-        lY += 26
-        graphics.text(font, "§bCooldown (s):", cardX + 20, lY, Color.WHITE.rgb, false)
-    }
-
-    private fun renderTimingTab(graphics: GuiGraphicsExtractor, cardX: Int, cardY: Int, cardWidth: Int, cardHeight: Int) {
-        var sY = cardY + 110
-        graphics.text(font, "§e§lAutomated SkyBlock /loadouts Swapping Pipeline:", cardX + 20, sY, Color.WHITE.rgb, true)
-        sY += 16
-        graphics.text(font, "§7• Step 1: Pre-Command Delay: §f~150ms §7(randomized 130-175ms) ➜ Sends /loadouts", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
-        sY += 14
-        graphics.text(font, "§7• Step 2: Container Open Wait: §f~100ms §7(randomized 85-125ms) ➜ Clicks Target Slot [14..43]", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
-        sY += 14
-        graphics.text(font, "§7• Step 3: Post-Click Close: §f~100ms §7(randomized 85-125ms) ➜ Closes Container & Swaps Slot", cardX + 24, sY, Color.LIGHT_GRAY.rgb, false)
-        sY += 22
-        graphics.text(font, "§7Keybindings: §bV §7(Toggle A/B) • §bB §7(Swap Back to Last Loadout)", cardX + 20, sY, Color.YELLOW.rgb, false)
-    }
-
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (scrollY > 0) {
-            scrollOffset = (scrollOffset - 24).coerceAtLeast(0)
-            init()
-            return true
-        } else if (scrollY < 0) {
-            scrollOffset = (scrollOffset + 24).coerceAtMost(300)
-            init()
-            return true
+        val cardWidth = (width * 0.94f).coerceIn(540f, 880f).toInt()
+        val cardX = (width - cardWidth) / 2
+        val colWidth = (cardWidth - 44) / 2
+
+        if (mouseX < cardX + colWidth + 16) {
+            if (scrollY > 0) scrollOffsetLeft = (scrollOffsetLeft - 24).coerceAtLeast(0)
+            else if (scrollY < 0) scrollOffsetLeft = (scrollOffsetLeft + 24).coerceAtMost(220)
+        } else {
+            if (scrollY > 0) scrollOffsetRight = (scrollOffsetRight - 24).coerceAtLeast(0)
+            else if (scrollY < 0) scrollOffsetRight = (scrollOffsetRight + 24).coerceAtMost(180)
         }
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+        init()
+        return true
     }
 
     override fun isPauseScreen(): Boolean = false

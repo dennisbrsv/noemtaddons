@@ -26,8 +26,41 @@ enum class CompositeMode {
     OR
 }
 
+enum class GameInstanceType {
+    DUNGEONS,
+    DUNGEON_BOSS,
+    KUUDRA,
+    CRIMSON_ISLE,
+    THE_END,
+    MINING,
+    GARDEN,
+    HUB,
+    PRIVATE_ISLAND
+}
+
 sealed class LoadoutCondition {
     abstract fun matches(context: ConditionContext): Boolean
+
+    data class GameInstanceCondition(
+        val instanceType: GameInstanceType,
+        val floorFilter: String? = null
+    ) : LoadoutCondition() {
+        override fun matches(context: ConditionContext): Boolean {
+            val loc = context.location ?: return false
+            val locUpper = loc.uppercase()
+            return when (instanceType) {
+                GameInstanceType.DUNGEONS -> locUpper.contains("CATACOMBS") || locUpper.contains("DUNGEON")
+                GameInstanceType.DUNGEON_BOSS -> locUpper.contains("BOSS")
+                GameInstanceType.KUUDRA -> locUpper.contains("KUUDRA")
+                GameInstanceType.CRIMSON_ISLE -> locUpper.contains("CRIMSON")
+                GameInstanceType.THE_END -> locUpper.contains("THE END") || locUpper.contains("DRAGON")
+                GameInstanceType.MINING -> locUpper.contains("MINES") || locUpper.contains("HOLLOWS") || locUpper.contains("DWARVEN")
+                GameInstanceType.GARDEN -> locUpper.contains("GARDEN") || locUpper.contains("FARM")
+                GameInstanceType.HUB -> locUpper.contains("HUB") || locUpper.contains("VILLAGE")
+                GameInstanceType.PRIVATE_ISLAND -> locUpper.contains("ISLAND")
+            }
+        }
+    }
 
     data class ChatCondition(
         val pattern: String,

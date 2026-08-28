@@ -34,13 +34,17 @@ object LoadoutModule : Module {
     override fun init() {
         LoadoutManager.init()
 
-        // 1. Screen Packet Detection for /loadouts menu
+        // 1. Screen Packet Detection & Auto-Sync for /loadouts menu
         register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Pre> {
             val packet = event.packet
             if (packet is net.minecraft.network.protocol.game.ClientboundOpenScreenPacket) {
                 LoadoutManager.onPacketOpenScreen(packet.title.string)
             } else if (packet is net.minecraft.network.protocol.game.ClientboundContainerClosePacket) {
                 LoadoutManager.onPacketCloseScreen()
+            } else if (packet is net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket) {
+                if (LoadoutManager.inLoadoutMenu) {
+                    LoadoutManager.syncFromContainerItems(packet.items())
+                }
             }
         }
 
@@ -49,6 +53,25 @@ object LoadoutModule : Module {
             if (!ConfigManager.config.loadout.enabled) return@register
             val text = event.unformattedText
             LoadoutManager.checkConditions(ConditionContext(chatMessage = text))
+        }
+
+        // 3. Dungeon Entry & State Triggers
+        register<dev.noemt.client.event.impl.DungeonEvent.RunStatedEvent> {
+            if (!ConfigManager.config.loadout.enabled) return@register
+            LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs"))
+        }
+
+        // 4. Area / Scoreboard Instance Detection
+        register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Post> {
+            if (!ConfigManager.config.loadout.enabled) return@register
+            val packet = event.packet
+            if (packet is net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket) {
+                val params = packet.parameters.orElse(null) ?: return@register
+                val text = (params.playerPrefix.string + params.playerSuffix.string)
+                if (text.isNotBlank()) {
+                    LoadoutManager.checkConditions(ConditionContext(location = text))
+                }
+            }
         }
 
         // 2. Tick Event for Keybinds & Aim Triggers & Swap State Machine

@@ -275,8 +275,8 @@ object NoemtaddonsClient : ClientModInitializer {
                 )
             }
 
-            // Register Loadout Swapper Commands
-            for (lCmd in listOf("loadout", "loadouts", "lo")) {
+            // Register Loadout Swapper Commands (Use custom prefix so Hypixel's /loadout and /loadouts are untouched)
+            for (lCmd in listOf("noemtloadout", "als", "loadoutgui")) {
                 dispatcher.register(
                     ClientCommands.literal(lCmd)
                         .then(
