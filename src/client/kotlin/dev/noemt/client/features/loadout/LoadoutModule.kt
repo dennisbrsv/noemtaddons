@@ -30,8 +30,6 @@ object LoadoutModule : Module {
     val keyLoadout3 = KeyMapping("key.noemtaddons.loadout_3", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
     val keyLoadout4 = KeyMapping("key.noemtaddons.loadout_4", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.MISC)
 
-    private var tickCounter = 0
-
     override fun init() {
         LoadoutManager.init()
 
@@ -128,10 +126,9 @@ object LoadoutModule : Module {
 
             if (!ConfigManager.config.loadout.enabled) return@register
 
-            // Raycast Aim Check (every 4 ticks for smooth and reliable detection)
-            tickCounter++
-            if (tickCounter % 4 == 0 && LocationUtils.inDungeon) {
-                val aimedEntity = MobMatcher.getAimedEntity(maxDistance = 16.0)
+            // Raycast Aim Check (runs every tick in dungeons for instant lock-on)
+            if (LocationUtils.inDungeon) {
+                val aimedEntity = MobMatcher.getAimedEntity(maxDistance = 18.0)
                 if (aimedEntity != null) {
                     LoadoutManager.checkConditions(ConditionContext(aimedEntity = aimedEntity))
                 }
@@ -145,8 +142,7 @@ object LoadoutModule : Module {
 
             val current = LoadoutManager.getCurrentLoadout() ?: return@register
             val text = Component.literal("§6[Loadout: §e${current.name}§6]")
-
-            event.context.textRenderer().accept(10, 10, text)
+            event.context.text(mc.font, text, 10, 10, -1, true)
         }
     }
 }

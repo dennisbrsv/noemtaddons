@@ -11,7 +11,6 @@ import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.decoration.ArmorStand
 import net.minecraft.world.entity.player.Player
 import net.minecraft.world.phys.AABB
-import net.minecraft.world.phys.Vec3
 
 object MobMatcher {
     private val mc: Minecraft get() = Minecraft.getInstance()
@@ -28,19 +27,10 @@ object MobMatcher {
         "Revenant Horror", "Atoned Horror", "Tarantula Broodfather", "Voidgloom Seraph", "Inferno Demonlord", "Riftstalker Bloodfiend"
     )
 
-    fun isRealPlayer(entity: Entity): Boolean {
+    fun isTeammate(entity: Entity): Boolean {
         if (entity == mc.player) return true
-        if (entity !is Player) return false
-
-        val name = entity.gameProfile.name
-        // Minibosses are fake player NPCs whose names match MINIBOSS_NAMES or are not in online players
-        if (MINIBOSS_NAMES.any { name.contains(it, ignoreCase = true) }) return false
-
-        // Check if this is a registered dungeon teammate or real online player
-        if (DungeonListener.dungeonTeammates.any { it.name.equals(name, ignoreCase = true) }) return true
-        if (mc.connection?.getPlayerInfo(entity.uuid) != null) return true
-
-        return false
+        val name = entity.name.string
+        return DungeonListener.dungeonTeammates.any { it.name.equals(name, ignoreCase = true) || it.entity == entity }
     }
 
     fun matches(
@@ -49,8 +39,8 @@ object MobMatcher {
         nameFilter: String? = null,
         skullTexture: String? = null
     ): Boolean {
-        // Exclude self and actual players
-        if (isRealPlayer(entity)) return false
+        // Exclude self and dungeon teammates
+        if (entity == mc.player || isTeammate(entity)) return false
 
         val allNames = getAllEntityNames(entity)
         val skull = getEntitySkullTexture(entity)
@@ -144,15 +134,16 @@ object MobMatcher {
         entity.name.string.takeIf { it.isNotBlank() }?.let { names.add(it) }
         entity.customName?.string?.takeIf { it.isNotBlank() }?.let { names.add(it) }
 
-        // Find nearby floating ArmorStands (Hypixel Skyblock name tags)
+        // Find nearby floating ArmorStands (Hypixel Skyblock name tags above mob)
         val level = mc.level
         if (level != null) {
             val checkArea = AABB(
-                entity.x - 0.8, entity.y - 0.5, entity.z - 0.8,
-                entity.x + 0.8, entity.y + 2.6, entity.z + 0.8
+                entity.x - 1.5, entity.y - 1.0, entity.z - 1.5,
+                entity.x + 1.5, entity.y + 3.5, entity.z + 1.5
             )
             for (near in level.getEntities(entity, checkArea)) {
-                if (near is ArmorStand && near.hasCustomName()) {
+                if (near is ArmorStand) {
+                    near.name.string.takeIf { it.isNotBlank() }?.let { names.add(it) }
                     near.customName?.string?.takeIf { it.isNotBlank() }?.let { names.add(it) }
                 }
             }
@@ -168,15 +159,16 @@ object MobMatcher {
         val eyePos = player.eyePosition
         val lookVec = player.lookAngle
         val reachVec = eyePos.add(lookVec.scale(maxDistance))
-        val box = player.boundingBox.expandTowards(lookVec.scale(maxDistance)).inflate(1.5)
+        val box = player.boundingBox.expandTowards(lookVec.scale(maxDistance)).inflate(2.0)
 
         var closestEntity: Entity? = null
         var closestDist = maxDistance * maxDistance
 
         for (entity in level.getEntities(player, box)) {
-            if (entity == player || isRealPlayer(entity)) continue
-            // Allow targeting armor stands, living entities, mobs
-            val hitBox = entity.boundingBox.inflate(0.35)
+            if (entity == player) continue
+            if (entity is Player && isTeammate(entity)) continue
+
+            val hitBox = entity.boundingBox.inflate(0.5)
             val clip = hitBox.clip(eyePos, reachVec)
             if (clip.isPresent) {
                 val dist = eyePos.distanceToSqr(clip.get())
@@ -187,6 +179,6 @@ object MobMatcher {
             }
         }
 
-        return closestEntity ?: mc.crosshairPickEntity?.takeUnless { isRealPlayer(it) }
+        return closestEntity ?: mc.crosshairPickEntity?.takeUnless { it == player || (it is Player && isTeammate(it)) }
     }
 }

@@ -18,9 +18,18 @@ object LocationUtils {
 
     val inDungeon: Boolean
         get() {
-            val area = ScoreboardUtils.getSkyblockArea() ?: return false
-            return (area.contains("Catacombs", ignoreCase = true) || area.contains("The Catacombs", ignoreCase = true)) &&
-                    !area.contains("Dungeon Hub", ignoreCase = true)
+            val area = ScoreboardUtils.getSkyblockArea()
+            if (area != null) {
+                if (area.contains("Dungeon Hub", ignoreCase = true)) return false
+                if (area.contains("Catacombs", ignoreCase = true) || area.contains("The Catacombs", ignoreCase = true)) return true
+            }
+            val lines = ScoreboardUtils.getSidebarLines()
+            for (line in lines) {
+                if (line.contains("Dungeon Hub", ignoreCase = true)) return false
+                if (line.contains("The Catacombs", ignoreCase = true) || line.contains("Catacombs (", ignoreCase = true)) return true
+                if (line.contains("Dungeon Cleared:", ignoreCase = true) || line.contains("Cleared:", ignoreCase = true)) return true
+            }
+            return false
         }
 
     var dungeonFloor: String? = null
