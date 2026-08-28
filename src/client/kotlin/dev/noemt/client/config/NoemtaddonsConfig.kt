@@ -441,8 +441,8 @@ open class NoemtaddonsConfig : Config() {
         var autoBloodAttackRange: Float = 26f
 
         @Expose
-        @ConfigOption(name = "Weapon Hotbar Slot", desc = "Preferred weapon slot (0 = Auto/Current Weapon, 1-8 = Slot 1-8).")
-        @ConfigEditorSlider(minValue = 0f, maxValue = 8f, minStep = 1f)
+        @ConfigOption(name = "Weapon Hotbar Slot", desc = "Preferred weapon slot to always hold and attack with (0 = Current/Keep Held, 1-9 = Hotbar Slot 1-9).")
+        @ConfigEditorSlider(minValue = 0f, maxValue = 9f, minStep = 1f)
         @JvmField
         var bloodWeaponSlot: Int = 0
 

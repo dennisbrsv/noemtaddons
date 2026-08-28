@@ -262,9 +262,11 @@ object LoadoutManager {
     }
 
     private var dungeonRunTriggeredThisFloor: Boolean = false
+    private var wasInBloodRoom: Boolean = false
 
     fun resetDungeonRunTrigger() {
         dungeonRunTriggeredThisFloor = false
+        wasInBloodRoom = false
     }
 
     fun onWorldChange() {
@@ -275,6 +277,7 @@ object LoadoutManager {
         pendingRespawnSwapLoadoutId = null
         pendingRespawnReason = ""
         dungeonRunTriggeredThisFloor = false
+        wasInBloodRoom = false
         resetMinibossState()
         resetSwap()
     }
@@ -525,6 +528,15 @@ object LoadoutManager {
                 checkConditions(ConditionContext(location = "$areaName DUNGEONS"))
             } else if (!isFreshDungeonRun && lines.any { it.contains("Cleared:", ignoreCase = true) && !it.contains("Cleared: 0%", ignoreCase = true) }) {
                 dungeonRunTriggeredThisFloor = true
+            }
+
+            // Blood Room entry transition detection
+            val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+            if (inBlood && !wasInBloodRoom) {
+                wasInBloodRoom = true
+                checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))
+            } else if (!inBlood && wasInBloodRoom) {
+                wasInBloodRoom = false
             }
         }
     }
@@ -780,6 +792,17 @@ object LoadoutManager {
                 targetLoadoutId = "loadout_2",
                 condition = LoadoutCondition.AimCondition(mobCategory = MobCategory.WATCHER),
                 cooldownSeconds = 3.0
+            )
+        )
+
+        rules.add(
+            LoadoutRule(
+                id = "enter_blood_room",
+                name = "Enter Blood Room ➜ Loadout 2 (DPS / Boss)",
+                enabled = true,
+                targetLoadoutId = "loadout_2",
+                condition = LoadoutCondition.BloodRoomCondition(),
+                cooldownSeconds = 5.0
             )
         )
 

@@ -79,6 +79,16 @@ sealed class LoadoutCondition {
         }
     }
 
+    data class BloodRoomCondition(
+        val autoRevertOnClear: Boolean = false
+    ) : LoadoutCondition() {
+        override fun matches(context: ConditionContext): Boolean {
+            if (!LocationUtils.inDungeon) return false
+            if (context.inBloodRoom == true) return true
+            return dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+        }
+    }
+
     data class ChatCondition(
         val pattern: String,
         val matchType: MatchType = MatchType.CONTAINS
@@ -163,6 +173,10 @@ class LoadoutConditionAdapter : JsonSerializer<LoadoutCondition>, JsonDeserializ
                 obj.addProperty("type", "MINIBOSS")
                 obj.addProperty("autoRevertOnKill", src.autoRevertOnKill)
             }
+            is LoadoutCondition.BloodRoomCondition -> {
+                obj.addProperty("type", "BLOOD_ROOM")
+                obj.addProperty("autoRevertOnClear", src.autoRevertOnClear)
+            }
             is LoadoutCondition.AimCondition -> {
                 obj.addProperty("type", "AIM")
                 obj.addProperty("mobCategory", src.mobCategory.name)
@@ -188,8 +202,8 @@ class LoadoutConditionAdapter : JsonSerializer<LoadoutCondition>, JsonDeserializ
             }
             is LoadoutCondition.CompositeCondition -> {
                 obj.addProperty("type", "COMPOSITE")
-                obj.add("conditions", context.serialize(src.conditions))
                 obj.addProperty("mode", src.mode.name)
+                obj.add("conditions", context.serialize(src.conditions))
             }
         }
         return obj
@@ -208,6 +222,10 @@ class LoadoutConditionAdapter : JsonSerializer<LoadoutCondition>, JsonDeserializ
             "MINIBOSS" -> {
                 val revert = obj.get("autoRevertOnKill")?.asBoolean ?: true
                 LoadoutCondition.MinibossCondition(revert)
+            }
+            "BLOOD_ROOM" -> {
+                val revert = obj.get("autoRevertOnClear")?.asBoolean ?: false
+                LoadoutCondition.BloodRoomCondition(revert)
             }
             "AIM" -> {
                 val catName = obj.get("mobCategory")?.asString ?: "ANY"
@@ -252,7 +270,9 @@ data class ConditionContext(
     val chatMessage: String? = null,
     val aimedEntity: Entity? = null,
     val nearbyEntities: List<Pair<Entity, Double>>? = null,
-    val location: String? = null
+    val location: String? = null,
+    val inBloodRoom: Boolean? = null,
+    val dungeonRoomType: dev.noemt.client.utils.map.core.RoomType? = null
 )
 
 object SkyblockLoadoutConstants {

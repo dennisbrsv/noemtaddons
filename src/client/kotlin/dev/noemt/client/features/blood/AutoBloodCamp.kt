@@ -8,6 +8,7 @@ import dev.noemt.client.event.impl.DungeonEvent
 import dev.noemt.client.event.impl.TickEvent
 import dev.noemt.client.event.impl.WorldChangeEvent
 import dev.noemt.client.utils.*
+import dev.noemt.client.utils.ChatUtils.removeFormatting
 import dev.noemt.client.utils.map.core.RoomTile
 import dev.noemt.client.utils.map.core.RoomType
 import dev.noemt.client.utils.map.handlers.DungeonScanner
@@ -161,7 +162,7 @@ object AutoBloodCamp : Module {
                 savedWeaponSlot = player.inventory.selectedSlot
             }
 
-            val preferredSlot = if (config.bloodWeaponSlot in 1..8) {
+            val preferredSlot = if (config.bloodWeaponSlot in 1..9) {
                 config.bloodWeaponSlot - 1
             } else {
                 savedWeaponSlot ?: player.inventory.selectedSlot
@@ -173,15 +174,6 @@ object AutoBloodCamp : Module {
 
             val bloodRoom = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
                 ?: DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }?.uniqueRoom
-                ?: return@register
-
-            fun isDungeonTeammate(p: Player): Boolean {
-                if (p == player) return true
-                val name = p.gameProfile.name.trim()
-                if (mc.user.name.equals(name, ignoreCase = true)) return true
-                if (DungeonListener.thePlayer?.name.equals(name, ignoreCase = true)) return true
-                return DungeonListener.dungeonTeammates.any { it.name.equals(name, ignoreCase = true) }
-            }
 
             fun isWatcher(entity: LivingEntity): Boolean {
                 if (entity == BloodCamp.watcherEntity) return true
@@ -191,7 +183,9 @@ object AutoBloodCamp : Module {
                 return false
             }
 
-            val roomCenter = Vec3(bloodRoom.centerPos.x.toDouble(), 69.0, bloodRoom.centerPos.z.toDouble())
+            val roomCenter = bloodRoom?.let { Vec3(it.centerPos.x.toDouble(), 69.0, it.centerPos.z.toDouble()) }
+                ?: BloodCamp.watcherEntity?.position()
+                ?: player.position()
 
             val entities = mc.level?.entitiesForRendering() ?: return@register
             val tntEntities = entities.filterIsInstance<PrimedTnt>().filter { tnt ->
@@ -255,7 +249,8 @@ object AutoBloodCamp : Module {
                 if (isWatcher(entity)) return@filter false
                 if (!entity.isAlive || entity.isRemoved) return@filter false
                 if (entity.health <= 0f) return@filter false
-                isInsideBloodRoom(entity.position())
+                if (player.distanceTo(entity) > maxRange) return@filter false
+                isInsideBloodRoom(entity.position()) || (isPlayerInBloodRoom() && player.distanceTo(entity) < 30.0)
             }.sortedBy { entity ->
                 player.distanceToSqr(entity)
             }
@@ -278,15 +273,13 @@ object AutoBloodCamp : Module {
                         recordedSpawnLocations.add(endVec)
                     }
 
-                    // Delay: wait at least 4 packets / 4 ticks for trajectory to settle away from the wall
-                    if (data.deltaHistory.size < 4) return@mapNotNull null
+                    if (data.deltaHistory.size < 2) return@mapNotNull null
                     val timeTook = currentTime - data.started
-                    if (timeTook < 4) return@mapNotNull null
+                    if (timeTook < 2) return@mapNotNull null
 
                     val time = (if (data.firstSpawn) 40 else 0) + 38 - timeTook + 0.8
 
-                    if (!isInsideBloodRoom(endVec) || endVec.distanceTo(roomCenter) > 22.0) return@mapNotNull null
-                    if (time < -3.0 || time > 40.0) return@mapNotNull null
+                    if (time < -3.0 || time > 45.0) return@mapNotNull null
 
                     Triple(stand, data, time)
                 }
@@ -447,10 +440,49 @@ object AutoBloodCamp : Module {
         MouseRotationHelper.clearTarget()
     }
 
+    fun isDungeonTeammate(p: Player): Boolean {
+        val player = mc.player
+        if (p == player) return true
+        val name = p.gameProfile.name.trim()
+        val customName = p.customName?.string?.removeFormatting()?.trim() ?: ""
+        val displayName = p.displayName?.string?.removeFormatting()?.trim() ?: ""
+
+        if (mc.user.name.equals(name, ignoreCase = true)) return true
+        if (DungeonListener.thePlayer?.name.equals(name, ignoreCase = true)) return true
+
+        if (DungeonListener.dungeonTeammates.any {
+            it.name.equals(name, ignoreCase = true) ||
+            customName.contains(it.name, ignoreCase = true) ||
+            displayName.contains(it.name, ignoreCase = true)
+        }) return true
+
+        val info = mc.connection?.getPlayerInfo(p.uuid) ?: mc.connection?.getPlayerInfo(p.gameProfile.name)
+        if (info != null && DungeonListener.dungeonTeammates.any { it.name.equals(info.profile.name, ignoreCase = true) }) {
+            return true
+        }
+
+        return false
+    }
+
     private fun tryAttack(entity: LivingEntity?) {
+        val player = mc.player ?: return
+        val config = ConfigManager.config.blood
+
+        // STRICT TEAMMATE PROTECTION: Never attack or swing at a dungeon teammate
+        if (entity is Player && isDungeonTeammate(entity)) {
+            return
+        }
+
+        if (config.bloodWeaponSlot in 1..9) {
+            val weaponSlot = config.bloodWeaponSlot - 1
+            if (player.inventory.selectedSlot != weaponSlot) {
+                PlayerUtils.swapToSlot(weaponSlot)
+            }
+        }
+
         if (attackCooldownTicks > 0) return
 
-        val cps = ConfigManager.config.blood.autoBloodCps.coerceIn(1, 20)
+        val cps = config.autoBloodCps.coerceIn(1, 20)
         attackCooldownTicks = (20 / cps).coerceAtLeast(1)
 
         PlayerUtils.attackEntity(entity)

@@ -109,8 +109,14 @@ object LoadoutModule : Module {
 
         register<dev.noemt.client.event.impl.DungeonEvent.RoomEvent.onEnter> {
             if (!ConfigManager.config.loadout.enabled) return@register
-            if (event.room.data.type == dev.noemt.client.utils.map.core.RoomType.ENTRANCE) {
-                LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs DUNGEONS"))
+            when (event.room.data.type) {
+                dev.noemt.client.utils.map.core.RoomType.ENTRANCE -> {
+                    LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.ENTRANCE))
+                }
+                dev.noemt.client.utils.map.core.RoomType.BLOOD -> {
+                    LoadoutManager.checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.BLOOD))
+                }
+                else -> {}
             }
         }
 

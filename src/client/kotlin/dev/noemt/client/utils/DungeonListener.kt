@@ -48,6 +48,9 @@ object DungeonListener {
     var dungeonStartTime: DualTime? = null
     var dungeonEnded = false
 
+    var inGreenRoom: Boolean = false
+    var hasLeftGreenRoomPostEnter: Boolean = false
+
     var bloodOpenTime: DualTime? = null
     var watcherClearTime: DualTime? = null
     var watcherFinishSpawnTime: Long? = null
@@ -165,11 +168,31 @@ object DungeonListener {
         EventBus.register<TickEvent.Start>(EventPriority.HIGHEST) {
             currentTime++
             val player = mc.player ?: return@register
-            LocationUtils.updateBossStatus(player.x, player.y, player.z)
+
+            if (inDungeon) {
+                val currentRoom = dev.noemt.client.utils.map.utils.ScanUtils.currentRoom
+                    ?: dev.noemt.client.utils.map.utils.ScanUtils.getRoomFromPos(player.position())
+                val wasInGreen = inGreenRoom
+                inGreenRoom = currentRoom?.data?.type == RoomType.ENTRANCE
+
+                if (inGreenRoom && !wasInGreen) {
+                    hasLeftGreenRoomPostEnter = false
+                } else if (wasInGreen && !inGreenRoom) {
+                    hasLeftGreenRoomPostEnter = true
+                    if (!dungeonStarted || dungeonEnded) {
+                        dungeonStarted = true
+                        dungeonEnded = false
+                        dungeonStartTime = DualTime(currentTime)
+                        EventBus.post(DungeonEvent.RunStatedEvent)
+                    }
+                }
+            }
         }
 
         EventBus.register<WorldChangeEvent>(EventPriority.HIGHEST) {
             dungeonStarted = false
+            inGreenRoom = false
+            hasLeftGreenRoomPostEnter = false
             dungeonTeammates = mutableListOf()
             dungeonTeammatesNoSelf = mutableListOf()
             thePlayer = null

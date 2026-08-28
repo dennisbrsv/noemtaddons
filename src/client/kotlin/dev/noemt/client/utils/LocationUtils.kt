@@ -36,6 +36,8 @@ object LocationUtils {
     var dungeonFloorNumber: Int? = null
     var inBoss: Boolean = false
 
+    private val floorRegex = Regex("""(?:The Catacombs|Catacombs)\s*\(([FME\d]+)\)""", RegexOption.IGNORE_CASE)
+
     fun init() {
         EventBus.register<MainThreadPacketReceivedEvent.Post>(EventPriority.HIGHEST) {
             if (event.packet is ClientboundSetObjectivePacket) {
@@ -43,7 +45,51 @@ object LocationUtils {
             }
         }
 
+        EventBus.register<dev.noemt.client.event.impl.TickEvent.Start> {
+            updateLocationState()
+        }
+
         EventBus.register<WorldChangeEvent>(EventPriority.HIGH) { reset() }
+    }
+
+    fun updateLocationState() {
+        val lines = ScoreboardUtils.getSidebarLines()
+        if (lines.isNotEmpty()) {
+            inSkyblock = onHypixel && (ScoreboardUtils.getSidebarTitle().contains("SKYBLOCK", ignoreCase = true) || inSkyblock)
+        }
+
+        var foundFloor: String? = null
+        for (line in lines) {
+            val match = floorRegex.find(line)
+            if (match != null) {
+                foundFloor = match.groupValues[1].uppercase()
+                break
+            }
+        }
+
+        if (foundFloor == null) {
+            for (entry in TabListUtils.getTabList()) {
+                val clean = ChatUtils.run { entry.first.string.removeFormatting().trim() }
+                val match = floorRegex.find(clean)
+                if (match != null) {
+                    foundFloor = match.groupValues[1].uppercase()
+                    break
+                }
+            }
+        }
+
+        if (foundFloor != null) {
+            dungeonFloor = foundFloor
+            dungeonFloorNumber = when {
+                foundFloor == "E" -> 0
+                else -> foundFloor.filter { it.isDigit() }.toIntOrNull() ?: 1
+            }
+        }
+
+        val player = mc.player
+        if (player != null && inDungeon) {
+            updateBossStatus(player.x, player.y, player.z)
+        }
     }
 
     private fun reset() {

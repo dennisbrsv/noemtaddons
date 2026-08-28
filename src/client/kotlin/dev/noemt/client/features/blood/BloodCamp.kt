@@ -100,6 +100,18 @@ object BloodCamp : Module {
             watcherEntity = level.getEntity(packet.entity) as? Zombie
         }
 
+        register<TickEvent.Start> {
+            if (LocationUtils.inBoss || !LocationUtils.inDungeon) return@register
+            if (watcherEntity == null) {
+                val level = mc.level ?: return@register
+                val z = level.entitiesForRendering().filterIsInstance<Zombie>().find {
+                    it.y > 68.0 && (it.customName?.string?.contains("Watcher", ignoreCase = true) == true ||
+                            ItemUtils.getSkullTexture(it.getItemBySlot(EquipmentSlot.HEAD)) in watcherSkulls)
+                }
+                if (z != null) watcherEntity = z
+            }
+        }
+
         register<MainThreadPacketReceivedEvent.Pre> {
             if (watcherEntity == null) return@register
             val packet = event.packet as? ClientboundRemoveEntitiesPacket ?: return@register
@@ -109,13 +121,21 @@ object BloodCamp : Module {
 
         register<MainThreadPacketReceivedEvent.Pre> {
             val config = ConfigManager.config.blood
-            if (!config.bloodCamp) return@register
+            if (!config.bloodCamp && !config.autoBloodCamp) return@register
             if (LocationUtils.inBoss) return@register
             val level = mc.level ?: return@register
             val packet = event.packet as? ClientboundMoveEntityPacket ?: return@register
             if (packet.xa == 0.toShort() && packet.ya == 0.toShort() && packet.za == 0.toShort()) return@register
             val entity = packet.getEntity(level) as? ArmorStand ?: return@register
-            if (watcherEntity?.let { it.distanceToSqr(entity) <= 400 } != true) return@register
+            
+            val watcher = watcherEntity
+            if (watcher != null) {
+                if (watcher.distanceToSqr(entity) > 900) return@register
+            } else {
+                val p = mc.player
+                if (p != null && p.distanceToSqr(entity) > 2000) return@register
+            }
+
             val item = entity.getItemBySlot(EquipmentSlot.HEAD).takeIf { it.`is`(Items.PLAYER_HEAD) } ?: return@register
             if (ItemUtils.getSkullTexture(item) !in mobSkulls) return@register
 
