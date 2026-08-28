@@ -120,9 +120,17 @@ object LoadoutManager {
     }
 
     fun swapToPrevious() {
-        val target = previousLoadoutId
+        var target = previousLoadoutId
         if (target == null || target == currentLoadoutId) {
-            ChatUtils.modMessage("&e[Loadout] No previous loadout recorded.")
+            target = when {
+                loadoutAId.isNotBlank() && currentLoadoutId != loadoutAId -> loadoutAId
+                loadoutBId.isNotBlank() && currentLoadoutId != loadoutBId -> loadoutBId
+                currentLoadoutId != "loadout_1" -> "loadout_1"
+                else -> null
+            }
+        }
+        if (target == null || target == currentLoadoutId) {
+            ChatUtils.modMessage("&e[Loadout] Already on primary set.")
             return
         }
         val targetName = loadouts[target]?.name ?: target
@@ -249,6 +257,17 @@ object LoadoutManager {
         trackedMinibossName = ""
         minibossPreLoadoutId = null
         minibossDisappearedTicks = 0
+    }
+
+    fun onWorldChange() {
+        lastDetectedInstance = null
+        lastDetectedArea = ""
+        instanceCheckCounter = 0
+        wasDeadOrGhost = false
+        pendingRespawnSwapLoadoutId = null
+        pendingRespawnReason = ""
+        resetMinibossState()
+        resetSwap()
     }
 
     // ==========================================

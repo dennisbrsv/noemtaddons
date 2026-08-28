@@ -53,9 +53,13 @@ object LoadoutModule : Module {
             }
         }
 
-        // World Change Reset
+        // World Change & Run End Reset
         register<dev.noemt.client.event.impl.WorldChangeEvent> {
-            LoadoutManager.resetMinibossState()
+            LoadoutManager.onWorldChange()
+        }
+
+        register<dev.noemt.client.event.impl.DungeonEvent.RunEndedEvent> {
+            LoadoutManager.onWorldChange()
         }
 
         // 2. Chat Message Trigger & Miniboss Kill Detection
