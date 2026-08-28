@@ -59,10 +59,6 @@ object AutoBloodCamp : Module {
     private var kp6WasDown = false
     private var kp7WasDown = false
 
-    private var anchorPos: Vec3? = null
-    private var strafeCycleTicks = 0
-    private var currentStrafeDir = 0
-
     private val recordedSpawnLocations = mutableListOf<Vec3>()
     private val recordedBoxPositions = mutableListOf<Vec3>()
 
@@ -221,7 +217,6 @@ object AutoBloodCamp : Module {
 
             val roomCenterPos = getBloodRoomCenter() ?: player.blockPosition()
             val roomCenterFloor = Vec3(roomCenterPos.x + 0.5, 69.5, roomCenterPos.z + 0.5)
-            val currentAnchor = anchorPos ?: player.position().also { anchorPos = it }
 
             fun isWatcher(entity: LivingEntity): Boolean {
                 if (entity == BloodCamp.watcherEntity) return true
@@ -345,8 +340,8 @@ object AutoBloodCamp : Module {
                 val hasLos = player.hasLineOfSight(targetEntity) || PathfindingUtils.hasLineOfSight(player.eyePosition, targetVec)
 
                 if (dist <= maxRange && hasLos) {
-                    if (!isEvadingTnt) {
-                        performCombatMovement(currentAnchor, isAttacking = true)
+                    if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
+                        PathfindingUtils.stopMovement()
                     }
                     MouseRotationHelper.setTarget(targetVec, config.autoBloodAimSpeed)
 
@@ -447,8 +442,8 @@ object AutoBloodCamp : Module {
                         }
                     }
                 } else {
-                    if (!isEvadingTnt) {
-                        performCombatMovement(currentAnchor, isAttacking = false)
+                    if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
+                        PathfindingUtils.stopMovement()
                     }
                     MouseRotationHelper.setTarget(boxTargetVec, config.autoBloodAimSpeed)
                 }
@@ -469,43 +464,11 @@ object AutoBloodCamp : Module {
                 Vec3(roomCenterPos.x + 0.5, 71.0, roomCenterPos.z + 0.5)
             }
 
-            if (!isEvadingTnt) {
-                performCombatMovement(currentAnchor, isAttacking = false)
+            if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
+                PathfindingUtils.stopMovement()
             }
             MouseRotationHelper.setTarget(restingTarget, config.autoBloodAimSpeed)
         }
-    }
-
-    private fun performCombatMovement(anchor: Vec3, isAttacking: Boolean) {
-        val player = mc.player ?: return
-        val config = ConfigManager.config.blood
-        if (!config.autoBloodHumanMovement) {
-            PathfindingUtils.stopMovement()
-            return
-        }
-
-        // Leash to anchor position (prevent drifting into pillars or doorway)
-        val distToAnchor = hypot(player.x - anchor.x, player.z - anchor.z)
-        if (distToAnchor > 2.2) {
-            PathfindingUtils.moveTo(anchor, sprint = false)
-            return
-        }
-
-        strafeCycleTicks--
-        if (strafeCycleTicks <= 0) {
-            strafeCycleTicks = if (isAttacking) (5 + (Math.random() * 8).toInt()) else (12 + (Math.random() * 18).toInt())
-            currentStrafeDir = when ((Math.random() * 3).toInt()) {
-                0 -> -1
-                1 -> 1
-                else -> 0
-            }
-        }
-
-        if (player.horizontalCollision) {
-            currentStrafeDir = -currentStrafeDir
-        }
-
-        PathfindingUtils.setStrafeInput(currentStrafeDir)
     }
 
     private fun isDisablerMessage(text: String): Boolean {
@@ -544,9 +507,6 @@ object AutoBloodCamp : Module {
         tntReactionDelayTicks = 0
         lastAotvTime = 0L
         savedWeaponSlot = null
-        anchorPos = null
-        strafeCycleTicks = 0
-        currentStrafeDir = 0
         recordedSpawnLocations.clear()
         recordedBoxPositions.clear()
         PathfindingUtils.stopMovement()
