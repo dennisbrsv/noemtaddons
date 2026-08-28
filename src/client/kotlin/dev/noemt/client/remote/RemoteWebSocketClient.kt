@@ -99,12 +99,9 @@ object RemoteWebSocketClient : Module {
         }
         activeSocket = null
         isConnected = false
-        ChatUtils.modMessage("&e[Remote] Disconnected from WebSocket server.")
     }
 
     private fun onConnected(ws: WebSocket) {
-        ChatUtils.modMessage("&a[Remote] Connected to WebSocket server: &b$serverUrl")
-
         // Send Handshake packet
         val player = mc.player
         val handshake = JsonObject().apply {
@@ -185,8 +182,7 @@ object RemoteWebSocketClient : Module {
 
             when (type) {
                 "HANDSHAKE_ACK" -> {
-                    val msg = json.get("message")?.asString ?: "Authentication accepted"
-                    ChatUtils.modMessage("&a[Remote] Server: $msg")
+                    // Handshake accepted silently
                 }
 
                 "PING" -> {
