@@ -18,7 +18,7 @@ import net.minecraft.world.item.Items
 object DungeonChestGambling {
 
     data class ActiveSession(
-        val screen: AbstractContainerScreen<*>,
+        var screen: AbstractContainerScreen<*>,
         val engine: DungeonSlotMachineEngine,
         val containerId: Int,
         val startTime: Long
@@ -77,7 +77,8 @@ object DungeonChestGambling {
         }
 
         val session = activeSession ?: return false
-        if (session.screen !== screen || session.containerId != containerId) return false
+        if (session.containerId != containerId) return false
+        session.screen = screen
 
         // Check if celebration animation finished (2s post-celebration)
         if (session.engine.isFinished && System.currentTimeMillis() - session.engine.celebrationStartTime >= 2000L) {
@@ -113,7 +114,7 @@ object DungeonChestGambling {
     fun isSessionActive(screen: AbstractContainerScreen<*>): Boolean {
         if (!ConfigManager.config.gambling.enabled) return false
         val session = activeSession ?: return false
-        return session.screen === screen
+        return session.containerId == screen.menu.containerId
     }
 
     private val CROESUS_RUN_REGEX = Regex("""^(?:Master\s+)?Catacombs\s*-\s*Floor\s+([IVXLCDM\d]+)""", RegexOption.IGNORE_CASE)

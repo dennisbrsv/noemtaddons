@@ -140,8 +140,8 @@ class DungeonSlotMachineEngine(
         mouseY: Int,
         partialTick: Float
     ) {
-        val screenW = graphics.guiWidth()
-        val screenH = graphics.guiHeight()
+        val screenW = mc.window.guiScaledWidth.takeIf { it > 0 } ?: graphics.guiWidth()
+        val screenH = mc.window.guiScaledHeight.takeIf { it > 0 } ?: graphics.guiHeight()
         val now = System.currentTimeMillis()
         val elapsed = (now - startTime).coerceAtLeast(0L)
 

@@ -499,9 +499,23 @@ object DungeonItemRegistry {
 
     private fun setSkullTexture(stack: ItemStack, textureBase64: String) {
         try {
-            val profile = GameProfile(UUID.randomUUID(), "DungeonDrop")
+            val uuid = UUID.nameUUIDFromBytes(textureBase64.toByteArray())
+            val profile = GameProfile(uuid, "DungeonDrop")
             profile.properties.put("textures", Property("textures", textureBase64))
             stack.set(DataComponents.PROFILE, ResolvableProfile.createResolved(profile))
+
+            val customData = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()
+            val skullOwner = net.minecraft.nbt.CompoundTag()
+            skullOwner.putString("Id", uuid.toString())
+            val propertiesTag = net.minecraft.nbt.CompoundTag()
+            val texturesList = net.minecraft.nbt.ListTag()
+            val textureCompound = net.minecraft.nbt.CompoundTag()
+            textureCompound.putString("Value", textureBase64)
+            texturesList.add(textureCompound)
+            propertiesTag.put("textures", texturesList)
+            skullOwner.put("Properties", propertiesTag)
+            customData.put("SkullOwner", skullOwner)
+            stack.set(DataComponents.CUSTOM_DATA, CustomData.of(customData))
         } catch (e: Exception) {}
     }
 
@@ -511,11 +525,14 @@ object DungeonItemRegistry {
         "necron_handle" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMzkxMmVkZGE3N2I0Nzg0MDgyNTkxNjA5NTEwZjFlZTU1NmQ4ZmIxOWRkNzM1MmU2N2IwYjgzNWY0N2E2Zjc1YyJ9fX0=",
         "wither_scroll" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYmEzNDY0ZTBhYmNmYTM5MzQxNjg1Y2Q3MjY0NWNjNWQ3MjgzODMzYWFmOWJmYmM4NjQ3ZWE4ZTI4ZjRhY2Y0OSJ9fX0=",
         "recombobulator" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYmM4ZWY4ZDM1MWQ0YTkxMmRmMmExNmY5YWU2YWFmZmZmZmFmZTVmZmEwOWQwODczZWI0ZjVkNGY2M2RiOTI5In19fQ==",
+        "recombobulator_3000" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYmM4ZWY4ZDM1MWQ0YTkxMmRmMmExNmY5YWU2YWFmZmZmZmFmZTVmZmEwOWQwODczZWI0ZjVkNGY2M2RiOTI5In19fQ==",
         "bonzo_mask" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYjkyNDI5ZTU4ODVmNGYyYjViNDdiOGYyMDI1NGQ5OTYxMGMzZTcxZTk5OWRhMDZhNjU5NTNiMzcxNWNiNmI1YSJ9fX0=",
         "precursor_eye" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNmI0ODFjZDVjOTQxZWMxYjM3NGNmOTY3NGE5MDVhNjkyY2VjYmFiYmM0ZjVjMTgxMmY0Njk3YjRhMmU5M2U5MSJ9fX0=",
+        "precursor_gear" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZWVhNmQ1ZWE4YjU3ZDU0ODZkZTgzZmM2OTNmY2QxZjA2NDY5MjdmYzYxZDVhMTVkMDY5YmU3OGYzN2Q2NzE4In19fQ==",
         "wither_catalyst" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNjg0ZGFkZjQxNmNkMWUxYmEyYWIxOGJmMTdiMGRjNDg4ZDNjMDUxY2MyYjIzOGJjODk1MjFjYmE5MmRhYWRhMCJ9fX0=",
         "wither_blood" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMzkxMmVkZGE3N2I0Nzg0MDgyNTkxNjA5NTEwZjFlZTU1NmQ4ZmIxOWRkNzM1MmU2N2IwYjgzNWY0N2E2Zjc1YyJ9fX0=",
         "sadan_brooch" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNTI2ZDhjOTc5MWFhMWEzOGU3ZDZiOTRiNTlhNzMwNTU0YTFhZGNmZGFkNTQyNmUyM2MwMmVjMmJkYTY1Y2VjIn19fQ==",
+        "necromancer_brooch" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYjc0ZGJkNzFmZDhmOGEzNDFjNDM1ZjZkYjg1NWY5MTk5YjhhZGMxMmM0YmNjZmQ5MmRiYjFlOGY0ZDI2NCJ9fX0=",
         "master_skull" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNDY0ZGI3NWZiZTZjZWVjZmVkMjgyNDhlNThkZDIzZjU5NDVlYjEyMTkyMmY0NjQ0ZjE1NGE0NTNkNTBiIn19fQ==",
         "spirit" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNWIzYTY4NGJjMzkxMWYxZjZhN2NlZTRhMmQ2NmFlNTJkNTI2NTcyYjIxMTAzMWQ4MmM0OTdhMjcxMTJkYWRmIn19fQ==",
         "auto_recombobulator" to "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvOGVkMzFmYjcyYzg3MmNmYTc3YWE3OGNmNGU1OTNkZTI4YWMzODk4MWFiNGU5NzkxNzAxMTc0YmFjZWY0NjkifX19",
