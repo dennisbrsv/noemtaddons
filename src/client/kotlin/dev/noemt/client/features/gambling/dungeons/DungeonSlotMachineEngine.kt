@@ -147,8 +147,9 @@ class DungeonSlotMachineEngine(
         val elapsedTime = (now - startTime).coerceAtLeast(0L)
         val animTick = (now / 120L).toInt()
 
-        // 1. Draw 6-Row Chest Container Texture
-        graphics.blit(RenderPipelines.GUI_TEXTURED, CONTAINER_TEXTURE, left, top, 0f, 0f, imageWidth, imageHeight, 256, 256, -1)
+        // 1. Draw 6-Row Chest Container Texture authentically in two passes (top rows + bottom inventory)
+        graphics.blit(RenderPipelines.GUI_TEXTURED, CONTAINER_TEXTURE, left, top, 0f, 0f, imageWidth, 6 * 18 + 17, 256, 256)
+        graphics.blit(RenderPipelines.GUI_TEXTURED, CONTAINER_TEXTURE, left, top + 6 * 18 + 17, 0f, 126.0f, imageWidth, 96, 256, 256)
 
         // 2. Chest Title
         val floorTag = floor.name
@@ -258,7 +259,8 @@ class DungeonSlotMachineEngine(
         val reelX = left + 8 + (3 + reelIndex) * 18
         val slot = reels.getOrNull(reelIndex) ?: return
 
-        val totalPixelHeight = (slot.size - 2) * SLOT_HEIGHT
+        val winTargetIndex = slot.size - 2
+        val totalPixelDistance = winTargetIndex * SLOT_HEIGHT.toFloat()
 
         val progress = if (isSkipped || elapsedTime >= reelDuration) {
             if (!reelStopped[reelIndex]) {
@@ -272,32 +274,31 @@ class DungeonSlotMachineEngine(
             easeOutQuad(raw)
         }
 
-        val currentScrollY = totalPixelHeight * progress
-        val currentBaseIndex = (currentScrollY / SLOT_HEIGHT).toInt()
-        val pixelOffset = (currentScrollY % SLOT_HEIGHT).toInt()
+        val currentScrollDistance = totalPixelDistance * progress
+        val centerIndex = (currentScrollDistance / SLOT_HEIGHT).toInt()
 
         // Sound ticks on item change while scrolling
-        if (progress < 1.0f && currentBaseIndex > lastScrollIndex[reelIndex]) {
+        if (progress < 1.0f && centerIndex > lastScrollIndex[reelIndex]) {
             if (lastScrollIndex[reelIndex] != -1) {
                 val tickPitch = 1.6f + (ThreadLocalRandom.current().nextFloat() * 0.4f)
                 playSound(SoundEvents.UI_BUTTON_CLICK, tickPitch, 0.5f)
             }
-            lastScrollIndex[reelIndex] = currentBaseIndex
+            lastScrollIndex[reelIndex] = centerIndex
         }
 
         // Payline center is at Row 2: top + 18 + 2 * 18
-        val centerY = top + 18 + 2 * 18
+        val paylineCenterY = top + 18 + 2 * 18
 
-        for (offset in -2..2) {
-            val targetIndex = (currentBaseIndex + offset).coerceIn(0, slot.size - 1)
-            val itemId = slot[targetIndex]
-            val stack = if (progress >= 1.0f && offset == 0) {
+        for (idx in (centerIndex - 2)..(centerIndex + 2)) {
+            if (idx !in slot.indices) continue
+            val itemId = slot[idx]
+            val stack = if (progress >= 1.0f && idx == winTargetIndex) {
                 winningDrop
             } else {
                 DungeonItemRegistry.getItemStack(itemId)
             }
 
-            val itemY = centerY + pixelOffset - (offset * SLOT_HEIGHT)
+            val itemY = paylineCenterY + ((idx * SLOT_HEIGHT) - currentScrollDistance).toInt()
 
             graphics.item(stack, reelX, itemY)
             graphics.itemDecorations(font, stack, reelX, itemY)

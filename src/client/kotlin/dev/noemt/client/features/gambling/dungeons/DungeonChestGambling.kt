@@ -112,7 +112,7 @@ object DungeonChestGambling {
     fun isSessionActive(screen: AbstractContainerScreen<*>): Boolean {
         if (!ConfigManager.config.gambling.enabled) return false
         val session = activeSession ?: return false
-        return session.screen === screen && !session.engine.isFinished
+        return session.screen === screen
     }
 
     private val CROESUS_RUN_REGEX = Regex("""^(?:Master\s+)?Catacombs\s*-\s*Floor\s+([IVXLCDM\d]+)""", RegexOption.IGNORE_CASE)
