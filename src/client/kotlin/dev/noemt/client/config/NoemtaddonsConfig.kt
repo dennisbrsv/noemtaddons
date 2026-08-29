@@ -66,7 +66,7 @@ open class NoemtaddonsConfig : Config() {
         @ConfigOption(name = "Allowed Chest Types", desc = "0: Obsidian & Bedrock Only, 1: All Chests (Wood to Bedrock)")
         @ConfigEditorSlider(minValue = 0f, maxValue = 1f, minStep = 1f)
         @JvmField
-        var chestTypes: Int = 0
+        var chestTypes: Int = 1
 
         @Expose
         @ConfigOption(name = "Spin Duration (Seconds)", desc = "Base duration of the slot machine spinning animation.")

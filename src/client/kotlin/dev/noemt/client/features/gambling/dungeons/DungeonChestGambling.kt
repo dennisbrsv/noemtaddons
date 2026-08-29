@@ -30,8 +30,6 @@ object DungeonChestGambling {
 
     fun init() {}
 
-    private val CHEST_REGEX = Regex("""(?<type>Wood|Wooden|Gold|Golden|Diamond|Emerald|Obsidian|Bedrock)(?:\s+Chest)?""", RegexOption.IGNORE_CASE)
-
     val croesusLoreToFloor = mapOf(
         "Catacombs - Floor I" to DungeonFloor.F1,
         "Catacombs - Floor II" to DungeonFloor.F2,
@@ -112,24 +110,12 @@ object DungeonChestGambling {
         val rawTitle = screen.title.string
         val cleanTitle = rawTitle.removeFormatting().trim()
 
-        val match = CHEST_REGEX.find(cleanTitle) ?: return
-        val typeName = match.groups["type"]?.value ?: return
-        val chestType = DungeonChestType.getByName(typeName) ?: return
-
-        val allowedChests = if (ConfigManager.config.gambling.chestTypes == 0) {
-            listOf(DungeonChestType.OBSIDIAN, DungeonChestType.BEDROCK)
-        } else {
-            DungeonChestType.entries
-        }
-
-        if (chestType !in allowedChests) return
-
         val slots = screen.menu.slots
-        val items = slots.map { it.item }
+        val items = slots.take(54).map { it.item }
         val nonEmptyItems = items.filter { !it.isEmpty }
         if (nonEmptyItems.isEmpty()) return
 
-        // Check if Croesus or regular dungeon
+        // 1. Detect Croesus arrow or end-of-run barrier
         var isCroesus = false
         var detectedFloor: DungeonFloor? = null
 
@@ -151,6 +137,35 @@ object DungeonChestGambling {
             return
         }
 
+        // 2. Parse Chest Type (from Title, Slot 31 Open Button, or Container Items)
+        var chestType = DungeonChestType.findInText(cleanTitle)
+
+        if (chestType == null) {
+            // Check slot 31 (reward button) or any button item
+            for (item in nonEmptyItems) {
+                val name = item.hoverName.string.removeFormatting().trim()
+                if (name.contains("Reward Chest", ignoreCase = true) || name.contains("Open Chest", ignoreCase = true) || name.contains("Claim", ignoreCase = true)) {
+                    chestType = DungeonChestType.findInText(name)
+                    if (chestType != null) break
+                    for (line in item.lore) {
+                        chestType = DungeonChestType.findInText(line.removeFormatting())
+                        if (chestType != null) break
+                    }
+                }
+            }
+        }
+
+        val type = chestType ?: return
+
+        val allowedChests = if (ConfigManager.config.gambling.chestTypes == 0) {
+            listOf(DungeonChestType.OBSIDIAN, DungeonChestType.BEDROCK)
+        } else {
+            DungeonChestType.entries
+        }
+
+        if (type !in allowedChests) return
+
+        // 3. Resolve Floor
         if (detectedFloor == null) {
             detectedFloor = LocationUtils.dungeonFloor?.let { DungeonFloor.fromString(it) }
                 ?: LocationUtils.dungeonFloorNumber?.let { floorNum ->
@@ -161,11 +176,12 @@ object DungeonChestGambling {
                 ?: DungeonFloor.M7
         }
 
+        // 4. Find Winning Item from chest loot
         val winner = DungeonItemRegistry.findBestWinner(items)
-            ?: DungeonItemRegistry.getItemStack(DungeonItemRegistry.getRandomItem(detectedFloor, chestType).id)
+            ?: DungeonItemRegistry.getItemStack(DungeonItemRegistry.getRandomItem(detectedFloor, type).id)
 
         val duration = ConfigManager.config.gambling.spinDuration
-        val engine = DungeonSlotMachineEngine(detectedFloor, chestType, winner, customDurationSeconds = duration)
+        val engine = DungeonSlotMachineEngine(detectedFloor, type, winner, customDurationSeconds = duration)
 
         lastHandledContainerId = containerId
         activeSession = ActiveSession(screen, engine, containerId, System.currentTimeMillis())
