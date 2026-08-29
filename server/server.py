@@ -78,7 +78,7 @@ def init_auth(custom_password: Optional[str] = None):
 
 
 def get_project_version() -> str:
-    props_file = REPO_DIR / "gradle.properties"
+    props_file = REPO_DIR / "../gradle.properties"
     if props_file.exists():
         try:
             for line in props_file.read_text(encoding="utf-8").splitlines():
@@ -86,7 +86,7 @@ def get_project_version() -> str:
                     return line.split("=", 1)[1].strip()
         except Exception:
             pass
-    return "1.0.1"
+    return "1.0.2"
 
 
 def get_jar_path(flavor: str) -> Optional[Path]:
