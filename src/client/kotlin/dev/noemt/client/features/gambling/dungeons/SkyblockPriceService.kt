@@ -30,6 +30,7 @@ object SkyblockPriceService {
 
     private val bazaarPrices = ConcurrentHashMap<String, Long>()
     private val lowestBinPrices = ConcurrentHashMap<String, Long>()
+    private val fallbackPrices = ConcurrentHashMap<String, Long>()
     val nameToIdMap = ConcurrentHashMap<String, String>()
 
     private val essenceRegex = Regex("""(?:§[0-9a-fk-or])*([A-Za-z]+)\s+Essence\s*(?:§[0-9a-fk-or])*x(\d+)""", RegexOption.IGNORE_CASE)
@@ -267,8 +268,6 @@ object SkyblockPriceService {
         }
         return result.coerceAtLeast(1)
     }
-
-    private val fallbackPrices = ConcurrentHashMap<String, Long>()
 
     private fun loadFallbackPrices() {
         fallbackPrices["NECRON_HANDLE"] = 1_050_000_000L
