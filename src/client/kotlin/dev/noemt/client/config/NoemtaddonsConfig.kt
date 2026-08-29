@@ -48,6 +48,7 @@ open class NoemtaddonsConfig : Config() {
         @ConfigEditorBoolean
         @JvmField
         var enabled: Boolean = true
+        //test
 
         @Expose
         @ConfigOption(name = "Enable in Croesus", desc = "Plays slot machine animation when inspecting chests in Croesus.")
