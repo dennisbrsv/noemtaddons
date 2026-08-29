@@ -194,6 +194,22 @@ object NoemtaddonsClient : ClientModInitializer {
                         .then(buildSlotsCommandNode("slots"))
                         .then(buildSlotsCommandNode("slot"))
                         .then(buildSlotsCommandNode("gambling"))
+                        .then(
+                            ClientCommands.literal("dumpchest")
+                                .executes {
+                                    DebugUtils.dumpCurrentChest()
+                                    1
+                                }
+                        )
+                        .then(
+                            ClientCommands.literal("gambadebug")
+                                .executes {
+                                    dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode = !dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode
+                                    val state = if (dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode) "&aENABLED" else "&cDISABLED"
+                                    ChatUtils.modMessage("&e[Gambling Debug] Live container debugging is now $state&e.")
+                                    1
+                                }
+                        )
                         .executes { context ->
                             val client = context.source.client
                             client.execute {
@@ -208,6 +224,22 @@ object NoemtaddonsClient : ClientModInitializer {
             dispatcher.register(buildLoadoutCommandNode("als"))
             dispatcher.register(buildSlotsCommandNode("slots"))
             dispatcher.register(buildSlotsCommandNode("gambling"))
+            dispatcher.register(
+                ClientCommands.literal("dumpchest")
+                    .executes {
+                        DebugUtils.dumpCurrentChest()
+                        1
+                    }
+            )
+            dispatcher.register(
+                ClientCommands.literal("gambadebug")
+                    .executes {
+                        dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode = !dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode
+                        val state = if (dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode) "&aENABLED" else "&cDISABLED"
+                        ChatUtils.modMessage("&e[Gambling Debug] Live container debugging is now $state&e.")
+                        1
+                    }
+            )
 
             // Register stalk command
             dispatcher.register(

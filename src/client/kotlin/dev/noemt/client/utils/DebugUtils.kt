@@ -201,4 +201,88 @@ object DebugUtils {
         ChatUtils.modMessage("&a[NoemtAddons] Dumped FULL Debug Info to clipboard!")
         return text
     }
+
+    fun dumpCurrentChest(): String {
+        val screen = mc.screen as? net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<*>
+            ?: return "No container screen is currently open!".also {
+                ChatUtils.modMessage("&c[Debug] No chest or container screen is currently open!")
+            }
+
+        val sb = StringBuilder()
+        val rawTitle = screen.title.string
+        val cleanTitle = rawTitle.removeFormatting().trim()
+        val containerId = screen.menu.containerId
+        val totalSlots = screen.menu.slots.size
+
+        sb.appendLine("=== Dungeon Chest / Container Dump ===")
+        sb.appendLine("Screen Class: ${screen::class.qualifiedName}")
+        sb.appendLine("Menu Class: ${screen.menu::class.qualifiedName} | containerId: $containerId | totalSlots: $totalSlots")
+        sb.appendLine("Title Raw: '$rawTitle'")
+        sb.appendLine("Title Clean: '$cleanTitle'")
+        sb.appendLine("--------------------------------------------------")
+
+        val slots = screen.menu.slots
+        val items = slots.take(54).map { it.item }
+        val nonEmpty = slots.filter { it.hasItem() }
+
+        val parsedChestType = dev.noemt.client.features.gambling.chest.DungeonChestType.findInText(cleanTitle)
+        val config = dev.noemt.client.config.ConfigManager.config.gambling
+        val activeSession = dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.activeSession
+
+        sb.appendLine("Config State: enabled=${config.enabled}, croesusEnabled=${config.croesusEnabled}, chestTypes=${config.chestTypes}")
+        sb.appendLine("Active Session: ${activeSession != null} (isFinished=${activeSession?.engine?.isFinished})")
+        sb.appendLine("Title Chest Type Match: $parsedChestType")
+        sb.appendLine("Location State: inSkyblock=${LocationUtils.inSkyblock}, inDungeon=${LocationUtils.inDungeon}, floor=${LocationUtils.dungeonFloor}, floorNumber=${LocationUtils.dungeonFloorNumber}")
+
+        var isCroesus = false
+        var croesusTarget: String? = null
+        var hasBarrier = false
+        val claimButtons = mutableListOf<String>()
+
+        for (slot in nonEmpty) {
+            val item = slot.item
+            if (item.`is`(net.minecraft.world.item.Items.ARROW)) {
+                for (line in ItemUtils.run { item.lore }) {
+                    val cleanLine = line.removeFormatting().trim()
+                    if (cleanLine.startsWith("To Catacombs", ignoreCase = true) || cleanLine.startsWith("To Master", ignoreCase = true)) {
+                        isCroesus = true
+                        croesusTarget = cleanLine.removePrefix("To ").trim()
+                    }
+                }
+            }
+            if (item.`is`(net.minecraft.world.item.Items.BARRIER)) {
+                hasBarrier = true
+            }
+            val name = item.hoverName.string.removeFormatting().trim()
+            if (name.contains("Reward Chest", ignoreCase = true) || name.contains("Open Chest", ignoreCase = true) || name.contains("Claim", ignoreCase = true) || name.contains("Chest", ignoreCase = true)) {
+                claimButtons.add("Slot #${slot.index}: '$name'")
+            }
+        }
+
+        sb.appendLine("Croesus Detected: $isCroesus (Arrow Target: '$croesusTarget')")
+        sb.appendLine("Barrier Detected: $hasBarrier")
+        sb.appendLine("Claim/Chest Buttons Found (${claimButtons.size}): $claimButtons")
+
+        val bestWinner = dev.noemt.client.features.gambling.dungeons.DungeonItemRegistry.findBestWinner(items)
+        sb.appendLine("Best Winner Evaluated: '${bestWinner?.hoverName?.string}' | Display: '${bestWinner?.let { dev.noemt.client.features.gambling.dungeons.DungeonItemRegistry.getDropDisplayName(it) }}' | Value: ${bestWinner?.let { dev.noemt.client.features.gambling.dungeons.DungeonItemRegistry.getItemValue(it) }}")
+        sb.appendLine("---------------- Non-Empty Slots (${nonEmpty.size}) ----------------")
+
+        for (slot in nonEmpty) {
+            val item = slot.item
+            val regId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.item)
+            val name = item.hoverName.string
+            val sbId = ItemUtils.run { item.skyblockId }
+            val lore = ItemUtils.run { item.lore }
+            sb.appendLine("Slot #${slot.index} (x=${slot.x}, y=${slot.y}): '$name' ($regId x${item.count}) | sbId='$sbId'")
+            for ((lIdx, line) in lore.withIndex()) {
+                sb.appendLine("   [$lIdx] '${line.removeFormatting()}'")
+            }
+        }
+        sb.appendLine("==================================================")
+
+        val text = sb.toString()
+        mc.keyboardHandler.clipboard = text
+        ChatUtils.modMessage("&a[Debug] Dumped open chest ($cleanTitle, ${nonEmpty.size} items) to clipboard! &e(Paste with Ctrl+V)")
+        return text
+    }
 }

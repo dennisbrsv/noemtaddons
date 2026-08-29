@@ -27,6 +27,7 @@ object DungeonChestGambling {
         private set
 
     private var lastHandledContainerId: Int? = null
+    var debugMode: Boolean = false
 
     fun init() {}
 
@@ -134,6 +135,7 @@ object DungeonChestGambling {
         }
 
         if (isCroesus && !ConfigManager.config.gambling.croesusEnabled) {
+            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: Croesus gambling is disabled in config.")
             return
         }
 
@@ -155,7 +157,12 @@ object DungeonChestGambling {
             }
         }
 
-        val type = chestType ?: return
+        if (chestType == null) {
+            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: No chest type found in title '$cleanTitle' or buttons.")
+            return
+        }
+
+        val type = chestType
 
         val allowedChests = if (ConfigManager.config.gambling.chestTypes == 0) {
             listOf(DungeonChestType.OBSIDIAN, DungeonChestType.BEDROCK)
@@ -163,7 +170,10 @@ object DungeonChestGambling {
             DungeonChestType.entries
         }
 
-        if (type !in allowedChests) return
+        if (type !in allowedChests) {
+            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: Type $type not in allowedChests ($allowedChests).")
+            return
+        }
 
         // 3. Resolve Floor
         if (detectedFloor == null) {
@@ -182,6 +192,10 @@ object DungeonChestGambling {
 
         val duration = ConfigManager.config.gambling.spinDuration
         val engine = DungeonSlotMachineEngine(detectedFloor, type, winner, customDurationSeconds = duration)
+
+        if (debugMode) {
+            dev.noemt.client.utils.ChatUtils.modMessage("&a[Gamba Debug] ACTIVATED slot machine! Type: $type | Floor: $detectedFloor | Winner: ${winner.hoverName.string} | Duration: ${duration}s")
+        }
 
         lastHandledContainerId = containerId
         activeSession = ActiveSession(screen, engine, containerId, System.currentTimeMillis())
