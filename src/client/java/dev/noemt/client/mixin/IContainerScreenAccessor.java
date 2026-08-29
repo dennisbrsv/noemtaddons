@@ -9,4 +9,16 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface IContainerScreenAccessor {
     @Accessor("hoveredSlot")
     Slot getHoveredSlot();
+
+    @Accessor("leftPos")
+    int getLeftPos();
+
+    @Accessor("topPos")
+    int getTopPos();
+
+    @Accessor("imageWidth")
+    int getImageWidth();
+
+    @Accessor("imageHeight")
+    int getImageHeight();
 }

@@ -4,6 +4,7 @@ import dev.noemt.client.BuildConstants
 import dev.noemt.client.features.blood.AutoBloodCamp
 import dev.noemt.client.features.blood.BloodCamp
 import dev.noemt.client.features.blood.BloodESP
+import dev.noemt.client.features.gambling.dungeons.DungeonGamblingModule
 import dev.noemt.client.features.loadout.LoadoutModule
 import dev.noemt.client.features.map.DungeonMap
 import dev.noemt.client.features.misc.ChangelogManager
@@ -33,6 +34,7 @@ object ModuleManager {
         register(DiscordBotManager)
         register(RemoteWebSocketClient)
         register(LoadoutModule)
+        register(DungeonGamblingModule)
 
         // Initialize modules based on build type
         for (module in modules) {
