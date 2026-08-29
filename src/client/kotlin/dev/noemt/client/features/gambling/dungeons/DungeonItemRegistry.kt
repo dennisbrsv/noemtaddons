@@ -248,93 +248,11 @@ object DungeonItemRegistry {
 
     fun getItemValue(stack: ItemStack): Long {
         if (stack.isEmpty) return 0L
-
-        // 1. Check if Enchanted Book
-        if (stack.`is`(Items.ENCHANTED_BOOK)) {
-            val enchantName = getDropDisplayName(stack).lowercase()
-            for (line in listOf(enchantName) + stack.lore.map { it.lowercase() }) {
-                val clean = line.replace("§[0-9a-zA-Z]".toRegex(), "").trim()
-                when {
-                    clean.contains("fatal tempo") -> return 40_000_000L
-                    clean.contains("inferno") -> return 15_000_000L
-                    clean.contains("legion") -> return 6_500_000L
-                    clean.contains("soul eater") -> return 4_500_000L
-                    clean.contains("one for all") -> return 3_500_000L
-                    clean.contains("overload") -> return 2_500_000L
-                    clean.contains("combo") -> return 1_500_000L
-                    clean.contains("wisdom") -> return 1_200_000L
-                    clean.contains("bank") -> return 800_000L
-                    clean.contains("no pain no gain") -> return 600_000L
-                    clean.contains("fuming") -> return 1_800_000L
-                    clean.contains("rejuvenate") -> return 300_000L
-                    clean.contains("infinite quiver") -> return 200_000L
-                    clean.contains("feather falling") -> return 150_000L
-                }
-            }
-            return 100_000L
-        }
-
-        // 2. Check SkyBlock ID
-        val sbId = stack.skyblockId
-        if (sbId.isNotBlank()) {
-            val v = getItemValue(sbId)
-            if (v > 0L) return v
-        }
-
-        // 3. Check Name
-        val name = stack.hoverName.string
-        val nameId = nameToId(name)
-        val nameVal = getItemValue(nameId)
-        if (nameVal > 0L) return nameVal
-
-        return 50_000L
+        return SkyblockPriceService.getItemValue(stack)
     }
 
     fun getItemValue(id: String): Long {
-        val clean = id.lowercase()
-        return when {
-            clean.contains("necron_handle") -> 1_050_000_000L
-            clean.contains("shadow_warp") || clean.contains("wither_shield") || clean.contains("implosion") -> 380_000_000L
-            clean.contains("dark_claymore") -> 220_000_000L
-            clean.contains("giants_sword") -> 170_000_000L
-            clean.contains("fifth_master_star") -> 95_000_000L
-            clean.contains("fourth_master_star") -> 55_000_000L
-            clean.contains("third_master_star") -> 35_000_000L
-            clean.contains("shadow_fury") -> 45_000_000L
-            clean.contains("second_master_star") -> 22_000_000L
-            clean.contains("first_master_star") -> 12_000_000L
-            clean.contains("shadow_assassin_chestplate") -> 28_000_000L
-            clean.contains("wither_chestplate") -> 24_000_000L
-            clean.contains("precursor_eye") -> 25_000_000L
-            clean.contains("necromancer_lord_chestplate") -> 14_000_000L
-            clean.contains("recombobulator") -> 10_500_000L
-            clean.contains("livid_dagger") -> 11_000_000L
-            clean.contains("last_breath") -> 9_000_000L
-            clean.contains("spirit_sword") || clean.contains("item_spirit_bow") -> 7_000_000L
-            clean.contains("ultimate_fatal_tempo") -> 40_000_000L
-            clean.contains("ultimate_inferno") -> 15_000_000L
-            clean.contains("ultimate_legion") -> 6_500_000L
-            clean.contains("ultimate_soul_eater") -> 4_500_000L
-            clean.contains("ultimate_one_for_all") -> 3_500_000L
-            clean.contains("ultimate_combo") -> 1_500_000L
-            clean.contains("ultimate_wisdom") -> 1_200_000L
-            clean.contains("ultimate_bank") -> 800_000L
-            clean.contains("ultimate_no_pain_no_gain") -> 600_000L
-            clean.contains("overload") -> 2_500_000L
-            clean.contains("bonzo_staff") || clean.contains("bonzo_mask") -> 3_000_000L
-            clean.contains("fuming_potato_book") -> 1_800_000L
-            clean.contains("hot_potato_book") -> 350_000L
-            clean.contains("wither_catalyst") || clean.contains("wither_blood") -> 1_200_000L
-            clean.contains("spirit_wing") -> 2_500_000L
-            clean.contains("spirit_bone") -> 800_000L
-            clean.contains("rejuvenate") -> 300_000L
-            clean.contains("infinite_quiver") -> 200_000L
-            clean.contains("feather_falling") -> 150_000L
-            clean.contains("master_skull") -> 5_000_000L
-            clean.contains("essence") -> 5_000L
-            clean.contains("coin") -> 1_000L
-            else -> 20_000L
-        }
+        return SkyblockPriceService.getPrice(id)
     }
 
     private fun nameToId(name: String): String {
