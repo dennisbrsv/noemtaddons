@@ -24,14 +24,6 @@ public abstract class MixinAbstractContainerScreen extends Screen {
         super(title);
     }
 
-    @Inject(method = "extractBackground", at = @At("HEAD"), cancellable = true)
-    private void onExtractBackgroundHead(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-        AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) (Object) this;
-        if (DungeonChestGambling.INSTANCE.isSessionActive(screen)) {
-            ci.cancel();
-        }
-    }
-
     @Inject(method = "extractRenderState", at = @At("HEAD"), cancellable = true)
     private void onExtractRenderStateHead(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) (Object) this;

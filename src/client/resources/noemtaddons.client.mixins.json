@@ -12,6 +12,7 @@
 		"IKeyMapping",
 		"IContainerScreenAccessor",
 		"MixinAbstractContainerScreen",
+		"MixinContainerScreen",
 		"MixinCommandSuggestions",
 		"MixinChatScreen"
 	],

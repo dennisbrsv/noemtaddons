@@ -30,6 +30,7 @@ object NoemtaddonsClient : ClientModInitializer {
         LocationUtils.init()
         TabListUtils.init()
         DungeonListener.init()
+        dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.init()
         ModuleManager.init()
 
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->

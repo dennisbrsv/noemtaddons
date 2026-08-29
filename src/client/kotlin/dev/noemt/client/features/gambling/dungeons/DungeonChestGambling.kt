@@ -29,7 +29,18 @@ object DungeonChestGambling {
     private var lastHandledContainerId: Int? = null
     var debugMode: Boolean = false
 
-    fun init() {}
+    fun init() {
+        dev.noemt.client.event.EventBus.register<dev.noemt.client.event.impl.MainThreadPacketReceivedEvent.Post> {
+            val mc = net.minecraft.client.Minecraft.getInstance()
+            val screen = mc.screen as? AbstractContainerScreen<*> ?: return@register
+            val packet = event.packet
+            if (packet is net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket ||
+                packet is net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket ||
+                packet is net.minecraft.network.protocol.game.ClientboundOpenScreenPacket) {
+                checkContainer(screen)
+            }
+        }
+    }
 
     val croesusLoreToFloor = mapOf(
         "Catacombs - Floor I" to DungeonFloor.F1,
