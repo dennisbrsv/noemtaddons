@@ -55,24 +55,10 @@ class DungeonSlotMachineScreen(
     }
 
     override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
-        val left = (width - imageWidth) / 2
-        val top = (height - imageHeight) / 2
-        val mouseX = event.x().toInt()
-        val mouseY = event.y().toInt()
-
-        for (idx in 0..53) {
-            val row = idx / 9
-            val col = idx % 9
-            val slotX = left + 8 + (col * 18)
-            val slotY = top + 18 + (row * 18)
-
-            if (mouseX in slotX..(slotX + 16) && mouseY in slotY..(slotY + 16)) {
-                if (engine.handleSlotClick(idx)) {
-                    return true
-                }
-            }
+        if (!engine.isFinished) {
+            engine.skip()
+            return true
         }
-
         return super.mouseClicked(event, doubleClick)
     }
 

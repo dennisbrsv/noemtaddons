@@ -6,6 +6,7 @@ import dev.noemt.client.features.gambling.chest.DungeonChestType
 import dev.noemt.client.mixin.IContainerScreenAccessor
 import dev.noemt.client.utils.ChatUtils.removeFormatting
 import dev.noemt.client.utils.ItemUtils.lore
+import dev.noemt.client.utils.ItemUtils.skyblockId
 import dev.noemt.client.utils.LocationUtils
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
@@ -130,8 +131,9 @@ object DungeonChestGambling {
             return
         }
 
-        val slots = screen.menu.slots
-        val items = slots.take(54).map { it.item }
+        // STRICTLY container slots (exclude player's 36 inventory + hotbar slots)
+        val containerSlotCount = (screen.menu.slots.size - 36).coerceAtLeast(0)
+        val items = screen.menu.slots.take(containerSlotCount).map { it.item }
         val nonEmptyItems = items.filter { !it.isEmpty }
         if (nonEmptyItems.isEmpty()) return // Slot packets haven't arrived yet
 
@@ -153,7 +155,8 @@ object DungeonChestGambling {
             val winner = if (allCroesusDrops.isNotEmpty()) {
                 DungeonItemRegistry.findBestWinner(allCroesusDrops)
             } else {
-                DungeonItemRegistry.findBestWinner(items)
+                val validDrops = items.filter { !it.isEmpty && it.skyblockId.isNotBlank() }
+                if (validDrops.isNotEmpty()) DungeonItemRegistry.findBestWinner(validDrops) else null
             } ?: DungeonItemRegistry.getItemStack(DungeonItemRegistry.getRandomItem(floor, DungeonChestType.BEDROCK).id)
 
             // Determine highest chest tier available in this run for slot machine theme
@@ -231,28 +234,7 @@ object DungeonChestGambling {
         val session = activeSession ?: return false
         if (session.screen !== screen) return false
 
-        val accessor = screen as? IContainerScreenAccessor
-        val left = accessor?.leftPos ?: ((screen.width - 176) / 2)
-        val top = accessor?.topPos ?: ((screen.height - 222) / 2)
-        val mouseX = event.x().toInt()
-        val mouseY = event.y().toInt()
-
-        for (idx in 0..53) {
-            val row = idx / 9
-            val col = idx % 9
-            val slotX = left + 8 + (col * 18)
-            val slotY = top + 18 + (row * 18)
-
-            if (mouseX in slotX..(slotX + 16) && mouseY in slotY..(slotY + 16)) {
-                if (idx == 49) {
-                    session.engine.skip()
-                    activeSession = null
-                    return true
-                }
-            }
-        }
-
-        // Block other clicks while slot machine is actively spinning so player doesn't accidentally purchase before seeing loot
+        session.engine.skip()
         return true
     }
 
@@ -261,15 +243,8 @@ object DungeonChestGambling {
         if (session.screen !== screen) return false
 
         val key = event.key()
-        if (key == InputConstants.KEY_SPACE && ConfigManager.config.gambling.allowSpaceSkip) {
+        if (key == InputConstants.KEY_SPACE || key == InputConstants.KEY_ESCAPE) {
             session.engine.skip()
-            activeSession = null
-            return true
-        }
-
-        if (key == InputConstants.KEY_ESCAPE) {
-            session.engine.skip()
-            activeSession = null
             return true
         }
 
