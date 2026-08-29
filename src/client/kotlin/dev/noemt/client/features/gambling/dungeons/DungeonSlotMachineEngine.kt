@@ -324,10 +324,11 @@ class DungeonSlotMachineEngine(
         val now = System.currentTimeMillis()
         val pulse = ((sin(now / 100.0) + 1.0) * 0.5).toFloat()
 
+        val dropName = DungeonItemRegistry.getDropDisplayName(winningDrop)
         val text = if (isJackpot) {
-            "§6§l★ JACKPOT! ★ §d${winningDrop.hoverName.string}"
+            "§6§l★ JACKPOT! ★ §d$dropName"
         } else {
-            "§a§lREWARD: §f${winningDrop.hoverName.string}"
+            "§a§lREWARD: §f$dropName"
         }
 
         val textW = font.width(text)

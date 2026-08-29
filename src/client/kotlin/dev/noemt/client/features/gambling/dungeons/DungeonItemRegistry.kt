@@ -105,33 +105,91 @@ object DungeonItemRegistry {
         }.copy()
     }
 
+    fun getDropDisplayName(stack: ItemStack): String {
+        if (stack.isEmpty) return ""
+        if (stack.`is`(Items.ENCHANTED_BOOK)) {
+            val loreLines = stack.lore
+            val firstLore = loreLines.firstOrNull { line ->
+                val clean = line.replace("§[0-9a-zA-Z]".toRegex(), "").trim()
+                clean.isNotEmpty() && !clean.startsWith("Enchanted Book", ignoreCase = true)
+            }
+            if (!firstLore.isNullOrBlank()) {
+                return firstLore.trim()
+            }
+
+            val customName = stack.hoverName.string
+            val cleanCustom = customName.replace("§[0-9a-zA-Z]".toRegex(), "").trim()
+            if (cleanCustom.isNotEmpty() && !cleanCustom.startsWith("Enchanted Book", ignoreCase = true)) {
+                return customName
+            }
+        }
+        return stack.hoverName.string
+    }
+
+    fun normalizeDropItem(stack: ItemStack): ItemStack {
+        if (stack.isEmpty) return stack
+        if (stack.`is`(Items.ENCHANTED_BOOK)) {
+            val clone = stack.copy()
+            val enchantName = getDropDisplayName(clone)
+            if (enchantName.isNotBlank() && !enchantName.startsWith("Enchanted Book", ignoreCase = true)) {
+                clone.set(DataComponents.CUSTOM_NAME, Component.literal(enchantName))
+            }
+            return clone
+        }
+        return stack
+    }
+
     fun findBestWinner(items: List<ItemStack>): ItemStack? {
         val candidates = items.filter { stack ->
             if (stack.isEmpty) return@filter false
             val name = stack.hoverName.string
-            val id = stack.skyblockId
             val isIgnored = name.contains("Reward Chest", ignoreCase = true) ||
                     name.contains("Open Chest", ignoreCase = true) ||
                     name.contains("Go Back", ignoreCase = true) ||
                     name.contains("Close", ignoreCase = true) ||
                     name.contains("Glass Pane", ignoreCase = true) ||
                     stack.`is`(Items.GRAY_STAINED_GLASS_PANE) ||
-                    stack.`is`(Items.BLACK_STAINED_GLASS_PANE)
+                    stack.`is`(Items.BLACK_STAINED_GLASS_PANE) ||
+                    stack.`is`(Items.WHITE_STAINED_GLASS_PANE) ||
+                    stack.`is`(Items.ARROW) ||
+                    stack.`is`(Items.BARRIER)
             !isIgnored
         }
 
         if (candidates.isEmpty()) return null
 
-        return candidates.maxByOrNull { getItemValue(it) }
+        val best = candidates.maxByOrNull { getItemValue(it) } ?: return null
+        return normalizeDropItem(best)
     }
 
     fun getItemValue(stack: ItemStack): Long {
         if (stack.isEmpty) return 0L
-        val sbId = stack.skyblockId.ifBlank {
-            val name = stack.hoverName.string
-            nameToId(name)
+        val sbId = stack.skyblockId
+        if (sbId.isNotBlank()) {
+            val v = getItemValue(sbId)
+            if (v > 500_000L) return v
         }
-        return getItemValue(sbId)
+
+        val name = stack.hoverName.string
+        val nameVal = getItemValue(nameToId(name))
+        if (nameVal > 500_000L) return nameVal
+
+        if (stack.`is`(Items.ENCHANTED_BOOK)) {
+            for (line in stack.lore) {
+                val clean = line.replace("§[0-9a-zA-Z]".toRegex(), "").trim().lowercase()
+                when {
+                    clean.contains("legion") -> return 6_500_000L
+                    clean.contains("soul eater") -> return 4_500_000L
+                    clean.contains("one for all") -> return 3_500_000L
+                    clean.contains("overload") -> return 2_500_000L
+                    clean.contains("fuming") -> return 1_800_000L
+                    clean.contains("rejuvenate") -> return 300_000L
+                    clean.contains("infinite quiver") -> return 200_000L
+                    clean.contains("feather falling") -> return 150_000L
+                }
+            }
+        }
+        return nameVal
     }
 
     fun getItemValue(id: String): Long {
@@ -239,19 +297,13 @@ object DungeonItemRegistry {
             .joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
 
         val displayName = if (isUltimate) {
-            "§d§lEnchanted Book"
-        } else {
-            "§aEnchanted Book"
-        }
-
-        val enchantLine = if (isUltimate) {
             "§d§l$cleanEnchantName $romanLevel"
         } else {
             "§9$cleanEnchantName $romanLevel"
         }
 
         val lore = mutableListOf(
-            enchantLine,
+            displayName,
             "",
             "§7Use in an Anvil to apply to a valid item!",
             "",

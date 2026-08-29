@@ -24,36 +24,46 @@ object CroesusGamblingModifier {
         if (!stack.`is`(Items.PLAYER_HEAD)) return false
 
         val itemName = stack.hoverName.string.removeFormatting().trim()
-        return DungeonChestType.getByNameStartsWith(itemName) != null
+        val chestType = DungeonChestType.getByNameStartsWith(itemName) ?: return false
+
+        val allowedChests = if (ConfigManager.config.gambling.chestTypes == 0) {
+            listOf(DungeonChestType.OBSIDIAN, DungeonChestType.BEDROCK)
+        } else {
+            DungeonChestType.entries
+        }
+
+        return chestType in allowedChests
     }
 
     fun modifyTooltip(original: List<Component>): List<Component> {
         val result = mutableListOf<Component>()
-        var inContentsSection = false
+        var skippingContents = false
 
         for (comp in original) {
             val text = comp.string.removeFormatting().trim()
 
             if (text.equals("Contents", ignoreCase = true) || text.equals("Rewards", ignoreCase = true)) {
                 result.add(comp)
-                result.add(Component.literal("§7  • §d??? §8(Hidden by Slot Machine)"))
-                result.add(Component.literal("§7  • §e??? §8(Spin to reveal!)"))
+                result.add(Component.literal("§7Hidden by NoemtAddons"))
+                result.add(Component.literal("§7\"Dungeon Gambling\" feature."))
                 result.add(Component.literal(""))
-                inContentsSection = true
+                skippingContents = true
                 continue
             }
 
-            if (inContentsSection) {
-                if (text.startsWith("Cost") || text.startsWith("Click to open") || text.isEmpty()) {
-                    inContentsSection = false
+            if (skippingContents) {
+                if (text.startsWith("Cost", ignoreCase = true) || text.startsWith("Click to open", ignoreCase = true)) {
+                    skippingContents = false
                 } else {
-                    // Skip detailed contents lines
+                    // Skip reward content line
                     continue
                 }
             }
 
-            if (text.startsWith("Cost")) {
-                result.add(Component.literal("§7Cost: §6§k1234567§r §6Coins"))
+            if (text.startsWith("Cost", ignoreCase = true)) {
+                result.add(Component.literal("§7Cost"))
+                result.add(Component.literal("§6§kxxxxxxx§r §6Coins"))
+                result.add(Component.literal(""))
                 continue
             }
 
