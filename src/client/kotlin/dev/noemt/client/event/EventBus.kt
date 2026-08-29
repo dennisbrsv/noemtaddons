@@ -21,6 +21,10 @@ object EventBus {
         }
     }
 
+    fun clear() {
+        listeners.clear()
+    }
+
     @JvmStatic
     fun <T : Event> post(event: T): Boolean {
         val eventListeners = listeners[event.javaClass] ?: return event.isCanceled

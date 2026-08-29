@@ -30,7 +30,6 @@ object NoemtaddonsClient : ClientModInitializer {
         LocationUtils.init()
         TabListUtils.init()
         DungeonListener.init()
-        dev.noemt.client.features.gambling.dungeons.SkyblockPriceService.init()
         dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.init()
         ModuleManager.init()
 

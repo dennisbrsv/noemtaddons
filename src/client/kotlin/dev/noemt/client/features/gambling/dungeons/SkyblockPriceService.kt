@@ -1,7 +1,5 @@
 package dev.noemt.client.features.gambling.dungeons
 
-import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.noemt.client.utils.ItemUtils.lore
 import dev.noemt.client.utils.ItemUtils.skyblockId
@@ -30,52 +28,39 @@ object SkyblockPriceService {
         Thread(r, "NoemtAddons-PriceService").apply { isDaemon = true }
     }
 
-    private val bazaarPrices = ConcurrentHashMap<String, BazaarPrice>()
+    private val bazaarPrices = ConcurrentHashMap<String, Long>()
     private val lowestBinPrices = ConcurrentHashMap<String, Long>()
-    private val npcSellPrices = ConcurrentHashMap<String, Long>()
     val nameToIdMap = ConcurrentHashMap<String, String>()
 
     private val essenceRegex = Regex("""(?:§[0-9a-fk-or])*([A-Za-z]+)\s+Essence\s*(?:§[0-9a-fk-or])*x(\d+)""", RegexOption.IGNORE_CASE)
 
-    @Volatile var isLoaded = false
-        private set
-
     init {
-        // Fallback baseline prices in case offline or API delayed
         loadFallbackPrices()
 
-        // Initial fetch in background
+        // Fetch prices in background without blocking
         executor.submit {
             fetchAllPrices()
         }
 
-        // Periodic refresh every 10 minutes (matching NoammAddons)
         executor.scheduleAtFixedRate({
             fetchAllPrices()
         }, 10, 10, TimeUnit.MINUTES)
     }
 
     fun init() {
-        // Trigger singleton init
+        // Trigger initialization
     }
 
     private fun fetchAllPrices() {
         try {
             updateLowestBins()
-        } catch (e: Exception) {
-            // Silently ignore or fallback
-        }
+        } catch (_: Throwable) {}
         try {
             updateBazaarPrices()
-        } catch (e: Exception) {
-            // Silently ignore
-        }
+        } catch (_: Throwable) {}
         try {
             updateSkyblockItems()
-        } catch (e: Exception) {
-            // Silently ignore
-        }
-        isLoaded = true
+        } catch (_: Throwable) {}
     }
 
     private fun updateLowestBins() {
@@ -90,8 +75,7 @@ object SkyblockPriceService {
         if (response.statusCode() == 200) {
             val jsonObject = JsonParser.parseString(response.body()).asJsonObject
             for ((key, element) in jsonObject.entrySet()) {
-                val price = element.asDouble.toLong()
-                lowestBinPrices[key] = price
+                lowestBinPrices[key.uppercase()] = element.asDouble.toLong()
             }
         }
     }
@@ -112,12 +96,13 @@ object SkyblockPriceService {
                 val product = element.asJsonObject
                 val productId = product.get("product_id")?.asString ?: key
                 val buySummary = product.getAsJsonArray("buy_summary")
-                val sellSummary = product.getAsJsonArray("sell_summary")
+                val sellPrice = buySummary?.firstOrNull()?.asJsonObject?.get("pricePerUnit")?.asDouble?.toLong()
+                    ?: product.getAsJsonArray("sell_summary")?.firstOrNull()?.asJsonObject?.get("pricePerUnit")?.asDouble?.toLong()
+                    ?: 0L
 
-                val sellPrice = buySummary?.firstOrNull()?.asJsonObject?.get("pricePerUnit")?.asDouble?.toLong() ?: 0L
-                val buyPrice = sellSummary?.firstOrNull()?.asJsonObject?.get("pricePerUnit")?.asDouble?.toLong() ?: 0L
-
-                bazaarPrices[productId] = BazaarPrice(buyPrice, sellPrice)
+                if (sellPrice > 0L) {
+                    bazaarPrices[productId.uppercase()] = sellPrice
+                }
             }
         }
     }
@@ -140,20 +125,14 @@ object SkyblockPriceService {
                 val name = item.get("name")?.asString ?: continue
                 val cleanName = name.replace("§[0-9a-zA-Z]".toRegex(), "").trim()
                 nameToIdMap[cleanName] = id
-
-                val npcPrice = item.get("npc_sell_price")?.asLong
-                if (npcPrice != null) {
-                    npcSellPrices[id.replace(':', '-')] = npcPrice
-                }
             }
         }
     }
 
     fun getPrice(itemId: String): Long {
         val cleanId = itemId.trim().uppercase()
-        return bazaarPrices[cleanId]?.sell
+        return bazaarPrices[cleanId]
             ?: lowestBinPrices[cleanId]
-            ?: bazaarPrices[cleanId]?.buy
             ?: fallbackPrices[cleanId]
             ?: 0L
     }
@@ -164,9 +143,7 @@ object SkyblockPriceService {
         val cleanName = rawName.replace("§[0-9a-zA-Z]".toRegex(), "").replace("’", "'").trim()
         val itemId = stack.skyblockId.removePrefix("STARRED_")
 
-        var value = 0L
-
-        // 1. Enchanted Books (NoammAddons method: reads lore line 0 / line 2)
+        // 1. Enchanted Books
         if (itemId == "ENCHANTED_BOOK" || stack.`is`(Items.ENCHANTED_BOOK) || cleanName.contains("Enchanted Book", ignoreCase = true)) {
             val lore = stack.lore
             val bookName = if (lore.isNotEmpty()) {
@@ -229,7 +206,6 @@ object SkyblockPriceService {
         val mappedId = nameToIdMap[noShiny]?.removePrefix("STARRED_")
         if (mappedId != null) return mappedId
 
-        // Direct uppercase fallback
         return noShiny.uppercase().replace(" ", "_")
     }
 
@@ -348,6 +324,4 @@ object SkyblockPriceService {
         fallbackPrices["ENCHANTMENT_FEATHER_FALLING_6"] = 20_000L
         fallbackPrices["ENCHANTMENT_FEATHER_FALLING_10"] = 1_200_000L
     }
-
-    data class BazaarPrice(val buy: Long, val sell: Long)
 }
