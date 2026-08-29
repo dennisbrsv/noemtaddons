@@ -37,62 +37,6 @@ open class NoemtaddonsConfig : Config() {
     @JvmField
     var loadout: LoadoutCategory = LoadoutCategory()
 
-    @Expose
-    @Category(name = "Dungeon Gambling", desc = "SkyOcean-style Dungeon Chest Slot Machine animation inside chests")
-    @JvmField
-    var gambling: GamblingCategory = GamblingCategory()
-
-    class GamblingCategory {
-        @Expose
-        @ConfigOption(name = "Enable Dungeon Slot Machine", desc = "Plays an animated 3-reel slot machine directly inside dungeon chests!")
-        @ConfigEditorBoolean
-        @JvmField
-        var enabled: Boolean = true
-        //test
-
-        @Expose
-        @ConfigOption(name = "Enable in Croesus", desc = "Plays slot machine animation when inspecting chests in Croesus.")
-        @ConfigEditorBoolean
-        @JvmField
-        var croesusEnabled: Boolean = true
-
-        @Expose
-        @ConfigOption(name = "Hide Croesus Tooltip Preview", desc = "Hides reward items and cost preview in Croesus until clicked/opened.")
-        @ConfigEditorBoolean
-        @JvmField
-        var hideCroesusContents: Boolean = true
-
-        @Expose
-        @ConfigOption(name = "Allowed Chest Types", desc = "0: Obsidian & Bedrock Only, 1: All Chests (Wood to Bedrock)")
-        @ConfigEditorSlider(minValue = 0f, maxValue = 1f, minStep = 1f)
-        @JvmField
-        var chestTypes: Int = 1
-
-        @Expose
-        @ConfigOption(name = "Spin Duration (Seconds)", desc = "Base duration of the slot machine spinning animation.")
-        @ConfigEditorSlider(minValue = 1.0f, maxValue = 10.0f, minStep = 0.5f)
-        @JvmField
-        var spinDuration: Float = 4.0f
-
-        @Expose
-        @ConfigOption(name = "Play Sound Effects", desc = "Plays reel spinning ticks, locks, and jackpot fanfare sounds.")
-        @ConfigEditorBoolean
-        @JvmField
-        var playSounds: Boolean = true
-
-        @Expose
-        @ConfigOption(name = "Show Skip Button", desc = "Displays a clickable [Skip Animation] button inside the chest.")
-        @ConfigEditorBoolean
-        @JvmField
-        var showSkipButton: Boolean = true
-
-        @Expose
-        @ConfigOption(name = "Spacebar to Skip", desc = "Allows pressing Space or Escape to instantly skip the slot machine animation.")
-        @ConfigEditorBoolean
-        @JvmField
-        var allowSpaceSkip: Boolean = true
-    }
-
     class LoadoutCategory {
         @Expose
         @ConfigOption(name = "Enable Loadout Swapper", desc = "Master toggle for conditional and keybind loadout swapping (Run \$loadout gui).")

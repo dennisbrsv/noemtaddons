@@ -12,9 +12,6 @@ import dev.noemt.client.utils.TabListUtils
 import dev.noemt.client.utils.ThreadUtils
 import dev.noemt.client.remote.DiscordBotManager
 import dev.noemt.client.remote.RemoteWebSocketClient
-import dev.noemt.client.features.gambling.chest.DungeonChestType
-import dev.noemt.client.features.gambling.dungeons.DungeonFloor
-import dev.noemt.client.features.gambling.dungeons.DungeonSlotMachineScreen
 import com.mojang.brigadier.arguments.StringArgumentType
 import net.minecraft.client.Minecraft
 import net.minecraft.commands.SharedSuggestionProvider
@@ -30,7 +27,6 @@ object NoemtaddonsClient : ClientModInitializer {
         LocationUtils.init()
         TabListUtils.init()
         DungeonListener.init()
-        dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.init()
         ModuleManager.init()
 
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
@@ -192,25 +188,6 @@ object NoemtaddonsClient : ClientModInitializer {
                         )
                         .then(buildLoadoutCommandNode("loadouts"))
                         .then(buildLoadoutCommandNode("loadout"))
-                        .then(buildSlotsCommandNode("slots"))
-                        .then(buildSlotsCommandNode("slot"))
-                        .then(buildSlotsCommandNode("gambling"))
-                        .then(
-                            ClientCommands.literal("dumpchest")
-                                .executes {
-                                    DebugUtils.dumpCurrentChest()
-                                    1
-                                }
-                        )
-                        .then(
-                            ClientCommands.literal("gambadebug")
-                                .executes {
-                                    dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode = !dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode
-                                    val state = if (dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode) "&aENABLED" else "&cDISABLED"
-                                    ChatUtils.modMessage("&e[Gambling Debug] Live container debugging is now $state&e.")
-                                    1
-                                }
-                        )
                         .executes { context ->
                             val client = context.source.client
                             client.execute {
@@ -223,24 +200,6 @@ object NoemtaddonsClient : ClientModInitializer {
 
             // Quick shortcut aliases
             dispatcher.register(buildLoadoutCommandNode("als"))
-            dispatcher.register(buildSlotsCommandNode("slots"))
-            dispatcher.register(buildSlotsCommandNode("gambling"))
-            dispatcher.register(
-                ClientCommands.literal("dumpchest")
-                    .executes {
-                        DebugUtils.dumpCurrentChest()
-                        1
-                    }
-            )
-            dispatcher.register(
-                ClientCommands.literal("gambadebug")
-                    .executes {
-                        dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode = !dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode
-                        val state = if (dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.debugMode) "&aENABLED" else "&cDISABLED"
-                        ChatUtils.modMessage("&e[Gambling Debug] Live container debugging is now $state&e.")
-                        1
-                    }
-            )
             dispatcher.register(
                 ClientCommands.literal("lore")
                     .executes {
@@ -528,46 +487,6 @@ object NoemtaddonsClient : ClientModInitializer {
             .executes {
                 net.minecraft.client.Minecraft.getInstance().execute {
                     net.minecraft.client.Minecraft.getInstance().setScreen(dev.noemt.client.features.loadout.LoadoutScreen())
-                }
-                1
-            }
-    }
-
-    private fun buildSlotsCommandNode(literal: String): com.mojang.brigadier.builder.LiteralArgumentBuilder<net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> {
-        return ClientCommands.literal(literal)
-            .then(
-                ClientCommands.argument("floor", StringArgumentType.word())
-                    .suggests { _, builder ->
-                        SharedSuggestionProvider.suggest(listOf("F1", "F2", "F3", "F4", "F5", "F6", "F7", "M1", "M2", "M3", "M4", "M5", "M6", "M7"), builder)
-                    }
-                    .then(
-                        ClientCommands.argument("chest", StringArgumentType.word())
-                            .suggests { _, builder ->
-                                SharedSuggestionProvider.suggest(listOf("bedrock", "obsidian", "emerald", "diamond", "gold", "wood"), builder)
-                            }
-                            .executes { ctx ->
-                                val floorStr = StringArgumentType.getString(ctx, "floor")
-                                val chestStr = StringArgumentType.getString(ctx, "chest")
-                                val floor = DungeonFloor.fromString(floorStr) ?: DungeonFloor.M7
-                                val chest = DungeonChestType.getByName(chestStr) ?: DungeonChestType.BEDROCK
-                                Minecraft.getInstance().execute {
-                                    Minecraft.getInstance().setScreen(DungeonSlotMachineScreen(floor, chest))
-                                }
-                                1
-                            }
-                    )
-                    .executes { ctx ->
-                        val floorStr = StringArgumentType.getString(ctx, "floor")
-                        val floor = DungeonFloor.fromString(floorStr) ?: DungeonFloor.M7
-                        Minecraft.getInstance().execute {
-                            Minecraft.getInstance().setScreen(DungeonSlotMachineScreen(floor, DungeonChestType.BEDROCK))
-                        }
-                        1
-                    }
-            )
-            .executes {
-                Minecraft.getInstance().execute {
-                    Minecraft.getInstance().setScreen(DungeonSlotMachineScreen(DungeonFloor.M7, DungeonChestType.BEDROCK))
                 }
                 1
             }

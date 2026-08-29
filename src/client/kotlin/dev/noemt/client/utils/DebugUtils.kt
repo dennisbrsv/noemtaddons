@@ -228,49 +228,9 @@ object DebugUtils {
         sb.appendLine("--------------------------------------------------")
 
         val slots = screen.menu.slots
-        val items = slots.take(54).map { it.item }
         val nonEmpty = slots.filter { it.hasItem() }
 
-        val parsedChestType = dev.noemt.client.features.gambling.chest.DungeonChestType.findInText(cleanTitle)
-        val config = dev.noemt.client.config.ConfigManager.config.gambling
-        val activeSession = dev.noemt.client.features.gambling.dungeons.DungeonChestGambling.activeSession
-
-        sb.appendLine("Config State: enabled=${config.enabled}, croesusEnabled=${config.croesusEnabled}, chestTypes=${config.chestTypes}")
-        sb.appendLine("Active Session: ${activeSession != null} (isFinished=${activeSession?.engine?.isFinished})")
-        sb.appendLine("Title Chest Type Match: $parsedChestType")
         sb.appendLine("Location State: inSkyblock=${LocationUtils.inSkyblock}, inDungeon=${LocationUtils.inDungeon}, floor=${LocationUtils.dungeonFloor}, floorNumber=${LocationUtils.dungeonFloorNumber}")
-
-        var isCroesus = false
-        var croesusTarget: String? = null
-        var hasBarrier = false
-        val claimButtons = mutableListOf<String>()
-
-        for (slot in nonEmpty) {
-            val item = slot.item
-            if (item.`is`(net.minecraft.world.item.Items.ARROW)) {
-                for (line in ItemUtils.run { item.lore }) {
-                    val cleanLine = line.removeFormatting().trim()
-                    if (cleanLine.startsWith("To Catacombs", ignoreCase = true) || cleanLine.startsWith("To Master", ignoreCase = true)) {
-                        isCroesus = true
-                        croesusTarget = cleanLine.removePrefix("To ").trim()
-                    }
-                }
-            }
-            if (item.`is`(net.minecraft.world.item.Items.BARRIER)) {
-                hasBarrier = true
-            }
-            val name = item.hoverName.string.removeFormatting().trim()
-            if (name.contains("Reward Chest", ignoreCase = true) || name.contains("Open Chest", ignoreCase = true) || name.contains("Claim", ignoreCase = true) || name.contains("Chest", ignoreCase = true)) {
-                claimButtons.add("Slot #${slot.index}: '$name'")
-            }
-        }
-
-        sb.appendLine("Croesus Detected: $isCroesus (Arrow Target: '$croesusTarget')")
-        sb.appendLine("Barrier Detected: $hasBarrier")
-        sb.appendLine("Claim/Chest Buttons Found (${claimButtons.size}): $claimButtons")
-
-        val bestWinner = dev.noemt.client.features.gambling.dungeons.DungeonItemRegistry.findBestWinner(items)
-        sb.appendLine("Best Winner Evaluated: '${bestWinner?.hoverName?.string}' | Display: '${bestWinner?.let { dev.noemt.client.features.gambling.dungeons.DungeonItemRegistry.getDropDisplayName(it) }}' | Value: ${bestWinner?.let { dev.noemt.client.features.gambling.dungeons.DungeonItemRegistry.getItemValue(it) }}")
         sb.appendLine("---------------- Non-Empty Slots (${nonEmpty.size}) ----------------")
 
         for (slot in nonEmpty) {
