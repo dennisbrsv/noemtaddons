@@ -46,8 +46,8 @@ public abstract class MixinAbstractContainerScreen extends Screen {
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void onKeyPressedHead(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
         AbstractContainerScreen<?> screen = (AbstractContainerScreen<?>) (Object) this;
-        if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_F4 || event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_F8) {
-            dev.noemt.client.utils.DebugUtils.INSTANCE.dumpCurrentChest();
+        if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_F4) {
+            dev.noemt.client.utils.DebugUtils.INSTANCE.dumpHoveredOrHeldItem();
             cir.setReturnValue(true);
             return;
         }

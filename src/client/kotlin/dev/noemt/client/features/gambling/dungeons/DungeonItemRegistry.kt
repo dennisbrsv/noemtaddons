@@ -162,6 +162,90 @@ object DungeonItemRegistry {
         return normalizeDropItem(best)
     }
 
+    fun createItemFromDropName(name: String): ItemStack {
+        val clean = name.replace("§[0-9a-zA-Z]".toRegex(), "").replace("’", "'").trim()
+        val lower = clean.lowercase()
+
+        // 1. Check for Enchanted Book (e.g. "Enchanted Book (Combo I)", "Combo I", "Ultimate Legion V")
+        val bookMatch = Regex("""(?:Enchanted\s+Book\s*\()?\s*([A-Za-z\s]+?)\s+([IVXLCDM\d]+)\s*\)?""", RegexOption.IGNORE_CASE).find(clean)
+        if (bookMatch != null || lower.contains("enchanted book") || lower.contains("legion") || lower.contains("soul eater") || lower.contains("overload") || lower.contains("combo") || lower.contains("rejuvenate")) {
+            val enchantWord = bookMatch?.groups?.get(1)?.value?.trim() ?: clean.removePrefix("Enchanted Book").replace("(", "").replace(")", "").trim()
+            val levelStr = bookMatch?.groups?.get(2)?.value?.trim() ?: "1"
+            val level = when (levelStr.uppercase()) {
+                "I", "1" -> 1
+                "II", "2" -> 2
+                "III", "3" -> 3
+                "IV", "4" -> 4
+                "V", "5" -> 5
+                "VI", "6" -> 6
+                "VII", "7" -> 7
+                else -> 1
+            }
+
+            val enchantId = enchantWord.lowercase().replace(" ", "_")
+            val fullId = if (enchantId.startsWith("ultimate_")) enchantId else when (enchantId) {
+                "legion", "soul_eater", "one_for_all", "combo", "bank", "no_pain_no_gain", "wisdom", "rend", "fatal_tempo", "inferno", "habanero_tactics" -> "ultimate_$enchantId"
+                else -> enchantId
+            }
+
+            return createEnchantedBook(fullId, level)
+        }
+
+        // 2. Check for known items
+        val id = nameToId(clean)
+        return getItemStack(id)
+    }
+
+    fun extractCroesusDrops(items: List<ItemStack>): List<ItemStack> {
+        val drops = mutableListOf<ItemStack>()
+        for (item in items) {
+            if (item.isEmpty) continue
+            val lore = item.lore
+            var inRewardsSection = false
+
+            for (line in lore) {
+                val clean = line.replace("§[0-9a-zA-Z]".toRegex(), "").replace("’", "'").trim()
+                if (clean.equals("Rewards:", ignoreCase = true) ||
+                    clean.equals("Contents:", ignoreCase = true) ||
+                    clean.equals("Contents", ignoreCase = true) ||
+                    clean.equals("Rewards", ignoreCase = true)
+                ) {
+                    inRewardsSection = true
+                    continue
+                }
+                if (inRewardsSection && (
+                    clean.startsWith("Cost", ignoreCase = true) ||
+                    clean.startsWith("NOTE:", ignoreCase = true) ||
+                    clean.startsWith("Click to open", ignoreCase = true) ||
+                    clean.startsWith("[Skyblocker]", ignoreCase = true) ||
+                    clean.startsWith("Require", ignoreCase = true) ||
+                    clean.isEmpty()
+                )) {
+                    inRewardsSection = false
+                    continue
+                }
+
+                if (inRewardsSection || clean.startsWith("•") || clean.startsWith("-") || clean.startsWith("*") || clean.startsWith("+")) {
+                    val dropName = clean
+                        .removePrefix("•")
+                        .removePrefix("-")
+                        .removePrefix("*")
+                        .removePrefix("+")
+                        .trim()
+
+                    if (dropName.isNotBlank() && !dropName.contains("Coins", ignoreCase = true)) {
+                        val rawName = dropName.replace(Regex("""\s+x\d+$"""), "").trim()
+                        val stack = createItemFromDropName(rawName)
+                        if (!stack.isEmpty) {
+                            drops.add(stack)
+                        }
+                    }
+                }
+            }
+        }
+        return drops
+    }
+
     fun getItemValue(stack: ItemStack): Long {
         if (stack.isEmpty) return 0L
         val sbId = stack.skyblockId

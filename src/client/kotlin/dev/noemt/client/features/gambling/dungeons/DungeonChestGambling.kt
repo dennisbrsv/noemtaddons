@@ -115,6 +115,8 @@ object DungeonChestGambling {
         return session.screen === screen && !session.engine.isFinished
     }
 
+    private val CROESUS_RUN_REGEX = Regex("""^(?:Master\s+)?Catacombs\s*-\s*Floor\s+([IVXLCDM\d]+)""", RegexOption.IGNORE_CASE)
+
     private fun checkContainer(screen: AbstractContainerScreen<*>) {
         val containerId = screen.menu.containerId
         if (containerId == lastHandledContainerId) return
@@ -122,58 +124,77 @@ object DungeonChestGambling {
         val rawTitle = screen.title.string
         val cleanTitle = rawTitle.removeFormatting().trim()
 
+        // 1. If Croesus page overview (e.g. "(1/3) Croesus" or "Croesus"), ignore quietly and remember container ID
+        if (cleanTitle.contains("Croesus", ignoreCase = true)) {
+            lastHandledContainerId = containerId
+            return
+        }
+
         val slots = screen.menu.slots
         val items = slots.take(54).map { it.item }
         val nonEmptyItems = items.filter { !it.isEmpty }
-        if (nonEmptyItems.isEmpty()) return
+        if (nonEmptyItems.isEmpty()) return // Slot packets haven't arrived yet
 
-        // 1. Detect Croesus arrow or end-of-run barrier
-        var isCroesus = false
-        var detectedFloor: DungeonFloor? = null
+        // Set container as handled so we don't re-evaluate/spam every render frame
+        lastHandledContainerId = containerId
 
-        for (item in nonEmptyItems) {
-            if (item.`is`(Items.ARROW)) {
-                for (line in item.lore) {
-                    val cleanLine = line.removeFormatting().trim()
-                    if (cleanLine.startsWith("To Catacombs", ignoreCase = true) || cleanLine.startsWith("To Master", ignoreCase = true)) {
-                        isCroesus = true
-                        val target = cleanLine.removePrefix("To ").trim()
-                        detectedFloor = croesusLoreToFloor[target] ?: DungeonFloor.fromString(target)
-                        break
-                    }
+        // Case A: Croesus Run Screen: "(Master) Catacombs - Floor {x}"
+        val croesusMatch = CROESUS_RUN_REGEX.find(cleanTitle)
+        if (croesusMatch != null) {
+            if (!ConfigManager.config.gambling.croesusEnabled) {
+                if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Croesus gambling is disabled in config.")
+                return
+            }
+
+            val floor = DungeonFloor.fromString(cleanTitle) ?: DungeonFloor.F1
+
+            // Extract all drops from all chest heads in this Croesus run
+            val allCroesusDrops = DungeonItemRegistry.extractCroesusDrops(items)
+            val winner = if (allCroesusDrops.isNotEmpty()) {
+                DungeonItemRegistry.findBestWinner(allCroesusDrops)
+            } else {
+                DungeonItemRegistry.findBestWinner(items)
+            } ?: DungeonItemRegistry.getItemStack(DungeonItemRegistry.getRandomItem(floor, DungeonChestType.BEDROCK).id)
+
+            // Determine highest chest tier available in this run for slot machine theme
+            var bestChestTier = DungeonChestType.WOODEN
+            for (head in items) {
+                if (head.isEmpty) continue
+                val name = head.hoverName.string.removeFormatting()
+                val parsed = DungeonChestType.findInText(name)
+                if (parsed != null && parsed.ordinal > bestChestTier.ordinal) {
+                    bestChestTier = parsed
                 }
             }
-        }
 
-        if (isCroesus && !ConfigManager.config.gambling.croesusEnabled) {
-            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: Croesus gambling is disabled in config.")
+            val duration = ConfigManager.config.gambling.spinDuration
+            val engine = DungeonSlotMachineEngine(floor, bestChestTier, winner, customDurationSeconds = duration)
+
+            if (debugMode) {
+                dev.noemt.client.utils.ChatUtils.modMessage("&a[Gamba Debug] ACTIVATED CROESUS slot machine! Floor: $floor | Theme: $bestChestTier | Winner: ${DungeonItemRegistry.getDropDisplayName(winner)} | Duration: ${duration}s")
+            }
+
+            activeSession = ActiveSession(screen, engine, containerId, System.currentTimeMillis())
             return
         }
 
-        // 2. Parse Chest Type (from Title, Slot 31 Open Button, or Container Items)
-        var chestType = DungeonChestType.findInText(cleanTitle)
-
-        if (chestType == null) {
-            // Check slot 31 (reward button) or any button item
-            for (item in nonEmptyItems) {
-                val name = item.hoverName.string.removeFormatting().trim()
-                if (name.contains("Reward Chest", ignoreCase = true) || name.contains("Open Chest", ignoreCase = true) || name.contains("Claim", ignoreCase = true)) {
-                    chestType = DungeonChestType.findInText(name)
-                    if (chestType != null) break
-                    for (line in item.lore) {
-                        chestType = DungeonChestType.findInText(line.removeFormatting())
-                        if (chestType != null) break
+        // Case B: Live Dungeon Run Chest: "Bedrock Chest", "Obsidian Chest", etc.
+        val chestType = DungeonChestType.findInText(cleanTitle)
+            ?: run {
+                for (item in nonEmptyItems) {
+                    val name = item.hoverName.string.removeFormatting().trim()
+                    if (name.contains("Reward Chest", ignoreCase = true) || name.contains("Open Chest", ignoreCase = true) || name.contains("Claim", ignoreCase = true)) {
+                        val parsed = DungeonChestType.findInText(name)
+                        if (parsed != null) return@run parsed
                     }
                 }
+                null
             }
-        }
 
         if (chestType == null) {
-            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: No chest type found in title '$cleanTitle' or buttons.")
+            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Ignored: '$cleanTitle' is not a dungeon chest or Croesus run.")
             return
         }
-
-        val type = chestType
 
         val allowedChests = if (ConfigManager.config.gambling.chestTypes == 0) {
             listOf(DungeonChestType.OBSIDIAN, DungeonChestType.BEDROCK)
@@ -181,34 +202,28 @@ object DungeonChestGambling {
             DungeonChestType.entries
         }
 
-        if (type !in allowedChests) {
-            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: Type $type not in allowedChests ($allowedChests).")
+        if (chestType !in allowedChests) {
+            if (debugMode) dev.noemt.client.utils.ChatUtils.modMessage("&c[Gamba Debug] Rejected: Chest type $chestType not in allowedChests ($allowedChests).")
             return
         }
 
-        // 3. Resolve Floor
-        if (detectedFloor == null) {
-            detectedFloor = LocationUtils.dungeonFloor?.let { DungeonFloor.fromString(it) }
-                ?: LocationUtils.dungeonFloorNumber?.let { floorNum ->
-                    val isMaster = LocationUtils.dungeonFloor?.startsWith("M", ignoreCase = true) == true
-                    DungeonFloor.fromFloorNumber(floorNum, isMaster)
-                }
-                ?: DungeonFloor.fromString(cleanTitle)
-                ?: DungeonFloor.M7
-        }
+        val floor = LocationUtils.dungeonFloor?.let { DungeonFloor.fromString(it) }
+            ?: LocationUtils.dungeonFloorNumber?.let { floorNum ->
+                val isMaster = LocationUtils.dungeonFloor?.startsWith("M", ignoreCase = true) == true
+                DungeonFloor.fromFloorNumber(floorNum, isMaster)
+            }
+            ?: DungeonFloor.M7
 
-        // 4. Find Winning Item from chest loot
         val winner = DungeonItemRegistry.findBestWinner(items)
-            ?: DungeonItemRegistry.getItemStack(DungeonItemRegistry.getRandomItem(detectedFloor, type).id)
+            ?: DungeonItemRegistry.getItemStack(DungeonItemRegistry.getRandomItem(floor, chestType).id)
 
         val duration = ConfigManager.config.gambling.spinDuration
-        val engine = DungeonSlotMachineEngine(detectedFloor, type, winner, customDurationSeconds = duration)
+        val engine = DungeonSlotMachineEngine(floor, chestType, winner, customDurationSeconds = duration)
 
         if (debugMode) {
-            dev.noemt.client.utils.ChatUtils.modMessage("&a[Gamba Debug] ACTIVATED slot machine! Type: $type | Floor: $detectedFloor | Winner: ${winner.hoverName.string} | Duration: ${duration}s")
+            dev.noemt.client.utils.ChatUtils.modMessage("&a[Gamba Debug] ACTIVATED LIVE CHEST slot machine! Type: $chestType | Floor: $floor | Winner: ${DungeonItemRegistry.getDropDisplayName(winner)} | Duration: ${duration}s")
         }
 
-        lastHandledContainerId = containerId
         activeSession = ActiveSession(screen, engine, containerId, System.currentTimeMillis())
     }
 

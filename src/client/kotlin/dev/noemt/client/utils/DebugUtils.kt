@@ -135,7 +135,7 @@ object DebugUtils {
             val slot = (screen as? dev.noemt.client.mixin.IContainerScreenAccessor)?.hoveredSlot
             if (slot != null && slot.hasItem()) {
                 targetStack = slot.item
-                sourceDescription = "Hovered Slot #${slot.index} in Container"
+                sourceDescription = "Hovered Slot #${slot.index} in Container (${screen.title.string.removeFormatting()})"
             }
         }
 
@@ -150,7 +150,14 @@ object DebugUtils {
 
         val stack = targetStack
         val sb = StringBuilder()
-        sb.appendLine("=== Item Full Data Dump ($sourceDescription) ===")
+        val rawLore = ItemUtils.run { stack.lore }
+
+        sb.appendLine("=== Item Lore Dump ($sourceDescription: ${stack.hoverName.string.removeFormatting()}) ===")
+        for (line in rawLore) {
+            sb.appendLine(line.removeFormatting())
+        }
+        sb.appendLine()
+        sb.appendLine("=== Full Data Dump ===")
         sb.appendLine("Display Name: '${stack.hoverName.string}'")
         sb.appendLine("Clean Name: '${stack.hoverName.string.removeFormatting()}'")
         sb.appendLine("Registry ID: ${net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.item)}")
@@ -161,12 +168,11 @@ object DebugUtils {
         val uuid = ItemUtils.run { stack.itemUUID }
         val skull = ItemUtils.getSkullTexture(stack)
 
-        sb.appendLine("Skyblock ID: '$sbId'")
+        sb.appendLine("SkyBlock ID: '$sbId'")
         sb.appendLine("Item UUID: '$uuid'")
         if (skull != null) sb.appendLine("Skull Texture: '$skull'")
 
-        sb.appendLine("--- Lore Lines ---")
-        val rawLore = ItemUtils.run { stack.lore }
+        sb.appendLine("--- Formatted Lore Lines ---")
         for ((idx, line) in rawLore.withIndex()) {
             sb.appendLine("[$idx] '${line.removeFormatting()}' | raw='$line'")
         }
@@ -177,7 +183,7 @@ object DebugUtils {
 
         val text = sb.toString()
         mc.keyboardHandler.clipboard = text
-        ChatUtils.modMessage("&a[Debug] Copied full item data for &e${stack.hoverName.string} &7($sourceDescription) &ato clipboard! &e(Ctrl+V)")
+        ChatUtils.modMessage("&a[Debug] Copied lore & data for &e${stack.hoverName.string} &7($sourceDescription) &ato clipboard! &e(Ctrl+V)")
         return text
     }
 

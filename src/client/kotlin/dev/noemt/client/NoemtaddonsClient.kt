@@ -241,6 +241,27 @@ object NoemtaddonsClient : ClientModInitializer {
                         1
                     }
             )
+            dispatcher.register(
+                ClientCommands.literal("lore")
+                    .executes {
+                        DebugUtils.dumpHoveredOrHeldItem()
+                        1
+                    }
+            )
+            dispatcher.register(
+                ClientCommands.literal("item")
+                    .executes {
+                        DebugUtils.dumpHoveredOrHeldItem()
+                        1
+                    }
+            )
+            dispatcher.register(
+                ClientCommands.literal("hand")
+                    .executes {
+                        DebugUtils.dumpHoveredOrHeldItem()
+                        1
+                    }
+            )
 
             // Register stalk command
             dispatcher.register(
