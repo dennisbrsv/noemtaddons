@@ -109,7 +109,7 @@ object RemoteWebSocketClient : Module {
             addProperty("player", player?.name?.string ?: "Unknown")
             addProperty("uuid", player?.uuid?.toString() ?: "Unknown")
             addProperty("secret", ConfigManager.config.remote.wsSecret)
-            addProperty("modVersion", "1.0.1")
+            addProperty("modVersion", "1.0.2")
             addProperty("timestamp", System.currentTimeMillis())
         }
         sendJson(handshake)

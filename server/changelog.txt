@@ -1,19 +1,19 @@
-§b§lNoemtAddons v1.0.1 Update Changelog
+§b§lNoemtAddons v1.0.2 Update Changelog
 
-§a[Loadout Swapper & Triggers]
-§e• Multi-Attempt Swap Verification
-§7  Verifies chat and container sync on room entry with automatic retries.
-§e• Miniboss Memory & Race Condition Resolution
-§7  Queued revert mechanics and true LivingEntity body resolution.
-§e• Instant Blood Room & Dungeon Start Transitions
-§7  Immediate rule evaluation and synced loadout state machine.
+§a[In-Chest Dungeon Slot Machine & Gambling]
+§e• Authentic Hypixel In-Chest Experience
+§7  Rendered directly inside container GUIs with flashing casino glass panes and payline indicators.
+§e• 3-Reel Animated Physics & Easing
+§7  Vertical smooth spinning with quadratic deceleration and ticking sound effects.
+§e• Instant Skip Button & Hotkeys
+§7  Interactive [Skip Animation] button on slot 49 with SPACE and ESC hotkeys.
+§e• Dungeon Floor & Chest Support (F1-M7)
+§7  Full weighted loot tables from F1-M7 for Wood, Gold, Diamond, Emerald, Obsidian, and Bedrock chests.
+§e• Live Chest & Croesus Interception
+§7  Automatic trigger on chest open and optional Croesus reward preview hiding.
+§e• Test Command Suite
+§7  Spin anytime using /noemt slots [floor] [chest] or /slots with instant re-spin [R].
 
-§a[AutoBloodCamp]
-§e• Prioritized Ground Mob Targeting
-§7  Direct aim locking on mob bounding boxes with continuous full CPS sweeping.
-§e• Natural Player Head Rotations
-§7  Decoupled head and torso yaw within 45° shoulder limits.
-§e• Grounded TNT Evasion (6m Radius)
-§7  Pillar-aware safe spot pathfinding and grounded Etherwarp targeting.
-§e• Context-Aware Resting Aim
-§7  Aims at last air spawn box or area average if ground mobs were engaged.
+§a[Server & Cloud CI/CD Pipeline]
+§e• Dynamic Multi-Version Resolution
+§7  Automated mod and loader artifact resolution from gradle properties.

@@ -106,7 +106,7 @@ public class NoemtLoader implements PreLaunchEntrypoint, ClientModInitializer {
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(6000);
         conn.setReadTimeout(15000);
-        conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.1 (" + getFlavor() + ")");
+        conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.2 (" + getFlavor() + ")");
 
         if (destination.exists()) {
             conn.setIfModifiedSince(destination.lastModified());

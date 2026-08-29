@@ -24,7 +24,7 @@ object ChangelogManager : Module {
     override val type = ModuleType.LEGIT
 
     private const val CHANGELOG_URL = "https://addons.noemt.dev/changelog"
-    private const val CURRENT_VERSION = "1.0.1"
+    private const val CURRENT_VERSION = "1.0.2"
 
     private val metaFile: File by lazy {
         FabricLoader.getInstance().configDir.resolve("noemtaddons_meta.json").toFile()

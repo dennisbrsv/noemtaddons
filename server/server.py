@@ -77,28 +77,61 @@ def init_auth(custom_password: Optional[str] = None):
     active_sessions.add(token)
 
 
+def get_project_version() -> str:
+    props_file = REPO_DIR / "gradle.properties"
+    if props_file.exists():
+        try:
+            for line in props_file.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("version="):
+                    return line.split("=", 1)[1].strip()
+        except Exception:
+            pass
+    return "1.0.1"
+
+
 def get_jar_path(flavor: str) -> Optional[Path]:
+    ver = get_project_version()
     candidates = [
-        JARS_DIR / f"noemtaddons-1.0.1-{flavor}.jar",
+        JARS_DIR / f"noemtaddons-{ver}-{flavor}.jar",
         JARS_DIR / f"noemtaddons-{flavor}.jar",
         Path(__file__).parent / "jars" / f"noemtaddons-{flavor}.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-1.0.1-{flavor}.jar",
+        Path(__file__).parent / "jars" / f"noemtaddons-{ver}-{flavor}.jar",
     ]
     for p in candidates:
-        if p.exists() and p.is_file():
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
             return p
+
+    for d in (JARS_DIR, Path(__file__).parent / "jars"):
+        if d.exists():
+            matches = [
+                p for p in d.glob(f"*{flavor}*.jar")
+                if p.is_file() and p.stat().st_size > 0 and "loader" not in p.name.lower() and "sources" not in p.name.lower()
+            ]
+            if matches:
+                return max(matches, key=lambda x: x.stat().st_mtime)
     return None
 
 
 def get_loader_jar_path(flavor: str) -> Optional[Path]:
+    ver = get_project_version()
     candidates = [
-        JARS_DIR / f"noemtaddons-{flavor}-loader-1.0.1.jar",
+        JARS_DIR / f"noemtaddons-{flavor}-loader-{ver}.jar",
         JARS_DIR / f"noemtaddons-{flavor}-loader.jar",
+        Path(__file__).parent / "jars" / f"noemtaddons-{flavor}-loader-{ver}.jar",
         Path(__file__).parent / "jars" / f"noemtaddons-{flavor}-loader.jar",
     ]
     for p in candidates:
-        if p.exists() and p.is_file():
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
             return p
+
+    for d in (JARS_DIR, Path(__file__).parent / "jars"):
+        if d.exists():
+            matches = [
+                p for p in d.glob(f"*{flavor}*loader*.jar")
+                if p.is_file() and p.stat().st_size > 0 and "sources" not in p.name.lower()
+            ]
+            if matches:
+                return max(matches, key=lambda x: x.stat().st_mtime)
     return None
 
 
@@ -129,7 +162,7 @@ def compute_version_metadata() -> dict:
     cheat_info = get_file_info(cheat_p) if cheat_p else {"exists": False}
 
     return {
-        "version": "1.0.1",
+        "version": get_project_version(),
         "timestamp": int(datetime.now().timestamp()),
         "last_build": LAST_BUILD_TIME,
         "build_status": LAST_BUILD_STATUS,
