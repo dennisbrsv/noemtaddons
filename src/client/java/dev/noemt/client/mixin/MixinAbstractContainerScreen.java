@@ -18,8 +18,8 @@ public abstract class MixinAbstractContainerScreen extends Screen {
     }
 
     private boolean isSwapInputBlocked() {
-        return dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isSwapping() ||
-               dev.noemt.client.features.mask.AutoMaskManager.INSTANCE.isSwapping();
+        return dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap() ||
+               dev.noemt.client.features.mask.AutoMaskManager.INSTANCE.isExecutingSwap();
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)

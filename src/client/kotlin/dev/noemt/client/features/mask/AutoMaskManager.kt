@@ -63,7 +63,7 @@ object AutoMaskManager {
         private set
 
     val isExecutingSwap: Boolean get() = currentStage != MaskSwapStage.IDLE
-    val isSwapping: Boolean get() = isExecutingSwap || inEquipmentMenu || System.currentTimeMillis() < swapCooldownUntilMs || (mc.screen is AbstractContainerScreen<*> && inEquipmentMenu)
+    val isSwapping: Boolean get() = isExecutingSwap || inEquipmentMenu || System.currentTimeMillis() < swapCooldownUntilMs
 
     fun isSpiritOnCooldown(): Boolean = System.currentTimeMillis() < spiritCooldownUntilMs
     fun isBonzoOnCooldown(): Boolean = System.currentTimeMillis() < bonzoCooldownUntilMs

@@ -124,7 +124,7 @@ object LoadoutManager {
     private var pendingReason: String = "Manual"
 
     val isExecutingSwap: Boolean get() = currentStage != SwapStage.IDLE
-    val isSwapping: Boolean get() = isExecutingSwap || inLoadoutMenu || System.currentTimeMillis() < swapCooldownUntilMs || mc.screen is AbstractContainerScreen<*> || dev.noemt.client.features.mask.AutoMaskManager.isSwapping
+    val isSwapping: Boolean get() = isExecutingSwap || inLoadoutMenu || System.currentTimeMillis() < swapCooldownUntilMs || dev.noemt.client.features.mask.AutoMaskManager.isSwapping
 
     fun init() {
         loadData()
