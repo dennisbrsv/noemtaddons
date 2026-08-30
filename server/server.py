@@ -228,19 +228,22 @@ def get_project_version() -> str:
 
 def get_jar_path(flavor: str = "mod") -> Optional[Path]:
     ver = get_project_version()
+    server_jars = Path(__file__).parent / "jars"
     candidates = [
+        server_jars / "noemtaddons.jar",
+        server_jars / f"noemtaddons-{ver}.jar",
+        server_jars / "noemtaddons-cheat.jar",
+        server_jars / f"noemtaddons-{ver}-cheat.jar",
         JARS_DIR / f"noemtaddons-{ver}.jar",
         JARS_DIR / "noemtaddons.jar",
         JARS_DIR / f"noemtaddons-{ver}-cheat.jar",
         JARS_DIR / "noemtaddons-cheat.jar",
-        Path(__file__).parent / "jars" / "noemtaddons.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-{ver}.jar",
     ]
     for p in candidates:
         if p.exists() and p.is_file() and p.stat().st_size > 0:
             return p
 
-    for d in (JARS_DIR, Path(__file__).parent / "jars"):
+    for d in (server_jars, JARS_DIR):
         if d.exists():
             matches = [
                 p for p in d.glob("*.jar")
@@ -253,19 +256,22 @@ def get_jar_path(flavor: str = "mod") -> Optional[Path]:
 
 def get_loader_jar_path(flavor: str = "loader") -> Optional[Path]:
     ver = get_project_version()
+    server_jars = Path(__file__).parent / "jars"
     candidates = [
+        server_jars / "noemtaddons-loader.jar",
+        server_jars / f"noemtaddons-loader-{ver}.jar",
+        server_jars / "noemtaddons-cheat-loader.jar",
+        server_jars / f"noemtaddons-cheat-loader-{ver}.jar",
         JARS_DIR / f"noemtaddons-loader-{ver}.jar",
         JARS_DIR / "noemtaddons-loader.jar",
         JARS_DIR / f"noemtaddons-cheat-loader-{ver}.jar",
         JARS_DIR / "noemtaddons-cheat-loader.jar",
-        Path(__file__).parent / "jars" / "noemtaddons-loader.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-loader-{ver}.jar",
     ]
     for p in candidates:
         if p.exists() and p.is_file() and p.stat().st_size > 0:
             return p
 
-    for d in (JARS_DIR, Path(__file__).parent / "jars"):
+    for d in (server_jars, JARS_DIR):
         if d.exists():
             matches = [
                 p for p in d.glob("*loader*.jar")
@@ -277,6 +283,7 @@ def get_loader_jar_path(flavor: str = "loader") -> Optional[Path]:
 
 
 def get_sig_path() -> Optional[Path]:
+    server_jars = Path(__file__).parent / "jars"
     mod_p = get_jar_path("mod")
     if mod_p:
         sig1 = mod_p.with_name(mod_p.name + ".sig")
@@ -286,7 +293,15 @@ def get_sig_path() -> Optional[Path]:
         if sig2.exists() and sig2.is_file() and sig2.stat().st_size > 0:
             return sig2
 
-    for d in (JARS_DIR, Path(__file__).parent / "jars"):
+    candidates = [
+        server_jars / "noemtaddons.jar.sig",
+        server_jars / "noemtaddons.sig",
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file() and p.stat().st_size > 0:
+            return p
+
+    for d in (server_jars, JARS_DIR):
         if d.exists():
             matches = [p for p in d.glob("*.sig") if p.is_file() and p.stat().st_size > 0]
             if matches:
@@ -477,7 +492,16 @@ class AutoBuilder:
         else:
             logger.warning(f"⚠️ Git pull warning: {pull_res.stderr.strip() or pull_res.stdout.strip()}")
 
-        # 2. Update In-Game Changelog
+        # 2. Clean stale build/libs to prevent serving un-synced legacy local builds
+        stale_build_dir = REPO_DIR / "build" / "libs"
+        if stale_build_dir.exists() and (Path(__file__).parent / "jars").exists():
+            try:
+                import shutil
+                shutil.rmtree(stale_build_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+        # 3. Update In-Game Changelog
         short_hash, author, latest_msg = AutoBuilder.get_latest_commit_details()
         formatted_changelog = AutoBuilder.generate_changelog_text(short_hash, commits)
         changelog_path = Path(__file__).parent / "changelog.txt"
