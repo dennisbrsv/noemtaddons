@@ -295,7 +295,14 @@ object LoadoutManager {
         minibossPreLoadoutId = null
         minibossDisappearedTicks = 0
 
-        if (revertId != null && revertId != currentLoadoutId) {
+        // If player is in blood room and a blood room rule exists for the current/target loadout, do NOT revert to clear loadout!
+        val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+        val bloodRule = rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
+        if (inBlood && bloodRule != null && currentLoadoutId == bloodRule.targetLoadoutId) {
+            return
+        }
+
+        if (revertId != null && revertId != currentLoadoutId && !isTargetLoadoutEquipped(revertId)) {
             val revertName = loadouts[revertId]?.name ?: revertId
             if (isExecutingSwap) {
                 // Queue the revert if combat swap is still in progress
@@ -438,6 +445,69 @@ object LoadoutManager {
     // SWAP EXECUTION & STATE MACHINE
     // ==========================================
 
+    fun isTargetLoadoutEquipped(id: String): Boolean {
+        if (currentLoadoutId == id) return true
+        val targetLoadout = loadouts[id] ?: return false
+        val player = mc.player ?: return false
+
+        // 1. Check head equipment (Skull texture, Dyed color, Item registry key)
+        val headItem = player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD)
+        if (!headItem.isEmpty) {
+            val headTexture = ItemUtils.getSkullTexture(headItem)
+            if (!targetLoadout.skullTexture.isNullOrBlank() && headTexture != null) {
+                if (headTexture == targetLoadout.skullTexture) {
+                    currentLoadoutId = id
+                    return true
+                }
+            }
+
+            val headDyedColor = headItem.get(net.minecraft.core.component.DataComponents.DYED_COLOR)?.rgb()
+            if (targetLoadout.dyedColor != null && headDyedColor != null) {
+                if (headDyedColor == targetLoadout.dyedColor) {
+                    currentLoadoutId = id
+                    return true
+                }
+            }
+
+            val headKey = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(headItem.item).toString()
+            if (!targetLoadout.itemType.isNullOrBlank() && headKey == targetLoadout.itemType) {
+                if (targetLoadout.skullTexture.isNullOrBlank() && targetLoadout.dyedColor == null) {
+                    val othersWithSameItem = loadouts.values.count { it.id != id && it.itemType == headKey }
+                    if (othersWithSameItem == 0) {
+                        currentLoadoutId = id
+                        return true
+                    }
+                }
+            }
+        }
+
+        // 2. Check chestplate / armor piece names from targetLoadout.loreLines
+        val chestItem = player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST)
+        if (!chestItem.isEmpty && targetLoadout.loreLines.isNotEmpty()) {
+            val chestName = chestItem.hoverName.string.removeFormatting().lowercase().trim()
+            if (chestName.isNotBlank() && chestName.length > 3) {
+                val matchesInLore = targetLoadout.loreLines.any { line ->
+                    val cl = line.removeFormatting().lowercase().trim()
+                    cl.contains(chestName) || chestName.contains(cl)
+                }
+                if (matchesInLore) {
+                    val otherMatches = loadouts.values.count { other ->
+                        other.id != id && other.loreLines.any { line ->
+                            val cl = line.removeFormatting().lowercase().trim()
+                            cl.contains(chestName) || chestName.contains(cl)
+                        }
+                    }
+                    if (otherMatches == 0) {
+                        currentLoadoutId = id
+                        return true
+                    }
+                }
+            }
+        }
+
+        return false
+    }
+
     fun swapTo(id: String, reason: String = "Manual", force: Boolean = false) {
         val loadout = loadouts[id] ?: run {
             ChatUtils.modMessage("&c[Loadout] Unknown loadout ID: &e$id")
@@ -453,7 +523,8 @@ object LoadoutManager {
             return
         }
 
-        if (!force && currentLoadoutId == id) {
+        if (!force && (currentLoadoutId == id || isTargetLoadoutEquipped(id))) {
+            currentLoadoutId = id
             return
         }
 
@@ -523,7 +594,7 @@ object LoadoutManager {
             pendingRespawnSwapLoadoutId = null
             pendingRespawnReason = ""
 
-            if (target != null && target != currentLoadoutId) {
+            if (target != null && target != currentLoadoutId && !isTargetLoadoutEquipped(target)) {
                 ChatUtils.modMessage("&b[Loadout] &aRespawn confirmed (grounded)! Auto-swapping to: &e${loadouts[target]?.name ?: target}")
                 swapTo(target, reason)
             }
@@ -547,13 +618,14 @@ object LoadoutManager {
                 if (!bloodRoomTriggeredThisEntry) {
                     val bloodRule = rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
                     if (bloodRule != null) {
-                        if (currentLoadoutId != bloodRule.targetLoadoutId) {
+                        if (currentLoadoutId != bloodRule.targetLoadoutId && !isTargetLoadoutEquipped(bloodRule.targetLoadoutId)) {
                             if (!isExecutingSwap) {
                                 bloodRoomTriggeredThisEntry = true
                                 wasInBloodRoom = true
                                 checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))
                             }
                         } else {
+                            currentLoadoutId = bloodRule.targetLoadoutId
                             bloodRoomTriggeredThisEntry = true
                             wasInBloodRoom = true
                         }
@@ -580,18 +652,23 @@ object LoadoutManager {
             val targetId = pendingVerificationTargetId!!
             val targetLoadout = loadouts[targetId]
             if (targetLoadout != null) {
-                val now = System.currentTimeMillis()
-                if (now >= nextVerificationCheckMs) {
-                    if (verificationAttempts < MAX_VERIFICATION_ATTEMPTS) {
-                        verificationAttempts++
-                        val targetName = targetLoadout.name
-                        ChatUtils.modMessage("&b[Loadout] &eSwap unconfirmed for &f$targetName &e(Attempt $verificationAttempts/$MAX_VERIFICATION_ATTEMPTS)... Retrying /loadouts with short cooldown.")
-                        nextVerificationCheckMs = now + 950L
-                        swapTo(targetId, "$pendingVerificationReason (Retry #$verificationAttempts)", force = true)
-                    } else {
-                        // Max retries reached
-                        pendingVerificationTargetId = null
-                        verificationAttempts = 0
+                if (currentLoadoutId == targetId || isTargetLoadoutEquipped(targetId) || isSwapConfirmed) {
+                    pendingVerificationTargetId = null
+                    verificationAttempts = 0
+                } else {
+                    val now = System.currentTimeMillis()
+                    if (now >= nextVerificationCheckMs) {
+                        if (verificationAttempts < MAX_VERIFICATION_ATTEMPTS) {
+                            verificationAttempts++
+                            val targetName = targetLoadout.name
+                            ChatUtils.modMessage("&b[Loadout] &eSwap unconfirmed for &f$targetName &e(Attempt $verificationAttempts/$MAX_VERIFICATION_ATTEMPTS)... Retrying /loadouts with short cooldown.")
+                            nextVerificationCheckMs = now + 950L
+                            swapTo(targetId, "$pendingVerificationReason (Retry #$verificationAttempts)", force = true)
+                        } else {
+                            // Max retries reached
+                            pendingVerificationTargetId = null
+                            verificationAttempts = 0
+                        }
                     }
                 }
             } else {
@@ -638,6 +715,27 @@ object LoadoutManager {
                 if (now >= stageTargetTimeMs) {
                     val containerId = if (lastOpenContainerId != 0) lastOpenContainerId else player.containerMenu.containerId
                     val targetSlot = loadout.containerSlot
+
+                    // Check if already equipped from GUI slot lore
+                    val slotItem = player.containerMenu.slots.getOrNull(targetSlot)?.item ?: ItemStack.EMPTY
+                    val isAlreadyEquippedInMenu = if (!slotItem.isEmpty) {
+                        val lore = ItemUtils.run { slotItem.lore }
+                        lore.any { line ->
+                            val cl = line.removeFormatting().lowercase().trim()
+                            (cl.contains("currently equipped") || cl.contains("already equipped") || cl == "equipped!" || cl == "equipped" || cl.contains("active loadout")) && !cl.contains("click to equip")
+                        }
+                    } else false
+
+                    if (isAlreadyEquippedInMenu) {
+                        currentLoadoutId = loadout.id
+                        pendingVerificationTargetId = null
+                        isSwapConfirmed = true
+                        player.closeContainer()
+                        mc.setScreen(null)
+                        pendingAutoClose = true
+                        currentStage = SwapStage.POST_ACTIONS
+                        return
+                    }
 
                     mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
 
@@ -864,7 +962,10 @@ object LoadoutManager {
         for (rule in rules) {
             if (!rule.enabled) continue
             val target = rule.targetLoadoutId
-            if (rule.onlyIfNotCurrent && currentLoadoutId == target) continue
+            if (rule.onlyIfNotCurrent && (currentLoadoutId == target || isTargetLoadoutEquipped(target))) {
+                currentLoadoutId = target
+                continue
+            }
 
             val cooldownMs = (rule.cooldownSeconds * 1000).toLong()
             if (now - rule.lastTriggeredMs < cooldownMs) continue

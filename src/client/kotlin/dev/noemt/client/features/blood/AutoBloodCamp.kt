@@ -185,11 +185,12 @@ object AutoBloodCamp : Module {
                 return@register
             }
 
-            // Activate as soon as Watcher is active or blood mobs/spawns are present
+            // Activate as soon as Watcher is active, blood mobs/spawns are present, or player is in the blood room
             val isWatcherActive = watcherMessageCount >= 1 ||
                     BloodCamp.bloodMobs.isNotEmpty() ||
                     DungeonListener.bloodOpenTime != null ||
-                    BloodCamp.watcherEntity != null
+                    BloodCamp.watcherEntity != null ||
+                    currentlyInRoom
             if (!isWatcherActive) {
                 if (PathfindingUtils.isControllingMovement) PathfindingUtils.stopMovement()
                 MouseRotationHelper.clearTarget()
@@ -225,7 +226,12 @@ object AutoBloodCamp : Module {
                 if (entity == BloodCamp.watcherEntity) return true
                 val name = entity.customName?.string?.removeFormatting() ?: (entity as? Player)?.gameProfile?.name ?: ""
                 if (name.contains("The Watcher", ignoreCase = true) || name.equals("Watcher", ignoreCase = true)) return true
-                if (entity is Zombie && entity.y > 78.0) return true
+                val headItem = entity.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD)
+                if (!headItem.isEmpty) {
+                    val skull = ItemUtils.getSkullTexture(headItem)
+                    if (skull != null && skull in BloodCamp.watcherSkulls) return true
+                }
+                if (entity is Zombie && entity.y > 81.0) return true
                 return false
             }
 
@@ -297,7 +303,7 @@ object AutoBloodCamp : Module {
             }
 
             // 4. Find all living mobs strictly inside the blood room
-            // Exclude WitherBoss (player Wither pet circling), invisible entities, tamed pets, golems, and bats
+            // Exclude WitherBoss (player Wither pet circling), tamed pets, golems, and bats
             val maxRange = config.autoBloodAttackRange.toDouble().coerceIn(5.0, 30.0)
             val livingMobs = entities.filterIsInstance<LivingEntity>().filter { entity ->
                 if (entity == player) return@filter false
@@ -306,18 +312,16 @@ object AutoBloodCamp : Module {
                 if (entity is Player && isDungeonTeammate(entity)) return@filter false
                 if (isWatcher(entity)) return@filter false
                 if (entity is WitherBoss || entity.type == EntityType.WITHER) return@filter false
-                if (entity.isInvisible) return@filter false
                 if (entity is Bat || entity.type == EntityType.BAT) return@filter false
                 if (entity.type == EntityType.IRON_GOLEM || entity.type == EntityType.SNOW_GOLEM) return@filter false
                 if (entity is TamableAnimal && entity.isTame) return@filter false
                 val name = entity.customName?.string?.removeFormatting() ?: (entity as? Player)?.gameProfile?.name ?: ""
                 if (name.contains("Blessing", ignoreCase = true) ||
                     name.contains("Decoy", ignoreCase = true) ||
-                    name.contains("Wither", ignoreCase = true) ||
                     name.contains("Pet", ignoreCase = true)) return@filter false
                 if (!entity.isAlive || entity.isRemoved) return@filter false
                 if (entity.health <= 0f) return@filter false
-                if (player.distanceTo(entity) > maxRange) return@filter false
+                if (player.distanceTo(entity) > (maxRange + 15.0)) return@filter false
                 isInsideBloodRoom(entity.position())
             }.sortedWith(
                 compareByDescending<LivingEntity> {
@@ -335,11 +339,13 @@ object AutoBloodCamp : Module {
                 }
             }
 
-            // 5. Target & Attack Alive Ground Mobs in Blood Room (Highest Priority when mobs are alive)
+            // 5. Target & Attack Alive Ground Mobs in Blood Room (Highest Priority - Always First in Queue)
             if (livingMobs.isNotEmpty()) {
                 val targetEntity = livingMobs.first()
                 val targetVec = targetEntity.boundingBox.center
                 val dist = player.distanceTo(targetEntity)
+                val eyePos = player.eyePosition
+                val hasLos = player.hasLineOfSight(targetEntity) || PathfindingUtils.hasLineOfSight(eyePos, targetVec)
 
                 hasKilledGroundMobs = true
                 val mobPos = targetEntity.position()
@@ -347,12 +353,38 @@ object AutoBloodCamp : Module {
                     recordedGroundMobPositions.add(mobPos)
                 }
 
-                if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
-                    PathfindingUtils.stopMovement()
-                }
+                if (!hasLos || dist > maxRange) {
+                    if (!isEvadingTnt) {
+                        val now = System.currentTimeMillis()
+                        val walkShootPos = PathfindingUtils.findBestShootingPosition(targetVec, tntPositions)
+                        val walkDist = walkShootPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
 
-                // Aim directly at the mob's center
-                MouseRotationHelper.setTarget(targetVec, config.autoBloodAimSpeed)
+                        if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && now - lastAotvTime > 500) {
+                            val shootPos = PathfindingUtils.findAotvShootingPosition(targetVec, tntPositions)
+                            if (shootPos != null) {
+                                val targetPoint = Vec3(shootPos.x + 0.5, shootPos.y + 0.95, shootPos.z + 0.5)
+                                MouseRotationHelper.setTarget(targetPoint, config.autoBloodAimSpeed)
+                                if (MouseRotationHelper.isAimingAt(targetPoint, 4.5f)) {
+                                    lastAotvTime = now
+                                    teleportPauseTicks = 14
+                                    AOTVHelper.castTeleport(preferredSlot)
+                                }
+                                return@register
+                            }
+                        }
+
+                        if (walkShootPos != null) {
+                            val shootVec = Vec3(walkShootPos.x + 0.5, walkShootPos.y + 1.0, walkShootPos.z + 0.5)
+                            PathfindingUtils.moveTo(shootVec, sprint = false)
+                        }
+                    }
+                } else {
+                    if (!isEvadingTnt && PathfindingUtils.isControllingMovement) {
+                        PathfindingUtils.stopMovement()
+                    }
+                    // Aim directly at the mob's center
+                    MouseRotationHelper.setTarget(targetVec, config.autoBloodAimSpeed)
+                }
 
                 // Attack at full CPS whenever aimed towards mob (14 degree tolerance) or in close range
                 if (MouseRotationHelper.isAimingAt(targetVec, 14.0f) || dist < 6.0) {
@@ -566,6 +598,19 @@ object AutoBloodCamp : Module {
     }
 
     fun getBloodRoomCenter(): BlockPos? {
+        val cur = ScanUtils.currentRoom
+        if (cur?.data?.type == RoomType.BLOOD) {
+            return BlockPos(cur.centerPos.x, 69, cur.centerPos.z)
+        }
+
+        val pPos = mc.player?.position()
+        if (pPos != null) {
+            val r = ScanUtils.getRoomFromPos(pPos)
+            if (r?.data?.type == RoomType.BLOOD) {
+                return BlockPos(r.centerPos.x, 69, r.centerPos.z)
+            }
+        }
+
         val bloodUnique = DungeonScanner.uniqueRooms.values.find { it.data.type == RoomType.BLOOD }
         if (bloodUnique != null) {
             return BlockPos(bloodUnique.centerPos.x, 69, bloodUnique.centerPos.z)
@@ -610,20 +655,26 @@ object AutoBloodCamp : Module {
         if (!LocationUtils.inDungeon || LocationUtils.inBoss) return false
         val playerPos = player.position()
 
+        val currentRoom = ScanUtils.currentRoom ?: ScanUtils.getRoomFromPos(playerPos)
+        if (currentRoom?.data?.type == RoomType.BLOOD) return true
+
         val center = getBloodRoomCenter() ?: return false
         val dx = abs(playerPos.x - (center.x + 0.5))
         val dz = abs(playerPos.z - (center.z + 0.5))
 
-        // Strict 31x31 room boundary: inside the blood room floor area
-        return dx <= 15.0 && dz <= 15.0 && playerPos.y in 65.0..85.0
+        // Generous room boundary: inside the blood room floor area and doorways
+        return dx <= 18.0 && dz <= 18.0 && playerPos.y in 55.0..95.0
     }
 
     fun isInsideBloodRoom(vec: Vec3): Boolean {
         if (!LocationUtils.inDungeon || LocationUtils.inBoss) return false
+        val room = ScanUtils.getRoomFromPos(vec)
+        if (room?.data?.type == RoomType.BLOOD) return true
+
         val center = getBloodRoomCenter() ?: return false
         val dx = abs(vec.x - (center.x + 0.5))
         val dz = abs(vec.z - (center.z + 0.5))
-        return dx <= 15.0 && dz <= 15.0 && vec.y in 65.0..85.0
+        return dx <= 18.0 && dz <= 18.0 && vec.y in 55.0..95.0
     }
 
     fun dumpBloodRoomEntities() {

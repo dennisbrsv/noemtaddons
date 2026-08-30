@@ -113,9 +113,6 @@ sealed class LoadoutCondition {
         val maxDistance: Double = 15.0
     ) : LoadoutCondition() {
         override fun matches(context: ConditionContext): Boolean {
-            if (mobCategory == MobCategory.BLOOD_MOB && (context.inBloodRoom == true || dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom())) {
-                return true
-            }
             val target = context.aimedEntity ?: return false
             return MobMatcher.matches(target, mobCategory, nameFilter, skullTexture)
         }

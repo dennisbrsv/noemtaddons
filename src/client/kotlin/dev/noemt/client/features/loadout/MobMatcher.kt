@@ -80,6 +80,7 @@ object MobMatcher {
             MobCategory.BLOOD_MOB -> {
                 if (!LocationUtils.inDungeon) return false
                 (skull != null && skull in BloodCamp.mobSkulls) ||
+                        (entity is LivingEntity && entity !is ArmorStand && dev.noemt.client.features.blood.AutoBloodCamp.isInsideBloodRoom(entity.position())) ||
                         allNames.any { name ->
                             name.contains("Revived Undead", ignoreCase = true) ||
                                     name.contains("Tear", ignoreCase = true) ||
