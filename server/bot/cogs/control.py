@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import SlashCommandGroup, option, slash_command
 from datetime import datetime
 from bot.util.constants import GUILD_IDS
+from util.constants import is_authorized
 
 
 class ControlCog(commands.Cog, name="Control"):
@@ -16,6 +17,7 @@ class ControlCog(commands.Cog, name="Control"):
     )
 
     @control.command(name="build", description="Trigger instant git pull & gradle compilation")
+    @is_authorized()
     async def cmd_build(self, ctx: discord.ApplicationContext):
         server = self.bot.server
         if not server:
@@ -53,6 +55,7 @@ class ControlCog(commands.Cog, name="Control"):
             await ctx.respond(embed=embed)
 
     @control.command(name="kill", description="Emergency remote kill switch to terminate game client(s)")
+    @is_authorized()
     @option("target", description="Target player IGN or 'all'", default="all")
     async def cmd_kill(self, ctx: discord.ApplicationContext, target: str):
         server = self.bot.server
@@ -77,6 +80,7 @@ class ControlCog(commands.Cog, name="Control"):
         await ctx.respond(embed=embed)
 
     @control.command(name="msg", description="Send in-game mod chat message to client(s)")
+    @is_authorized()
     @option("target", description="Target player IGN or 'all'")
     @option("message", description="Message text to display")
     async def cmd_msg(self, ctx: discord.ApplicationContext, target: str, message: str):
@@ -91,6 +95,7 @@ class ControlCog(commands.Cog, name="Control"):
         await ctx.respond(f"📨 In-game message dispatched to **`{count}`** client(s) (Target: `{target}`): `{message}`")
 
     @control.command(name="chat", description="Execute command or chat message on player client")
+    @is_authorized()
     @option("target", description="Target player IGN or 'all'")
     @option("command", description="Command to execute (e.g. /warp hub)")
     async def cmd_chat(self, ctx: discord.ApplicationContext, target: str, command: str):
@@ -105,6 +110,7 @@ class ControlCog(commands.Cog, name="Control"):
         await ctx.respond(f"💬 Command dispatched to **`{count}`** client(s) (Target: `{target}`): `{command}`")
 
     @control.command(name="title", description="Display custom screen title alert on client")
+    @is_authorized()
     @option("target", description="Target player IGN or 'all'")
     @option("title", description="Main title text")
     @option("subtitle", description="Subtitle text", default="Discord Operator Alert")
@@ -121,6 +127,7 @@ class ControlCog(commands.Cog, name="Control"):
         await ctx.respond(f"📢 Title alert dispatched to **`{count}`** client(s): `{title}`")
 
     @control.command(name="goto", description="Direct player pathfinder to coordinates")
+    @is_authorized()
     @option("target", description="Target player IGN or 'all'")
     @option("x", description="X coordinate (integer)")
     @option("y", description="Y coordinate (integer)")
@@ -139,6 +146,7 @@ class ControlCog(commands.Cog, name="Control"):
         await ctx.respond(f"🧭 Pathfind target `({x}, {y}, {z})` sent to **`{count}`** client(s).")
 
     @control.command(name="stop", description="Cancel active pathfinder navigation")
+    @is_authorized()
     @option("target", description="Target player IGN or 'all'", default="all")
     async def cmd_stop(self, ctx: discord.ApplicationContext, target: str):
         server = self.bot.server
@@ -151,6 +159,7 @@ class ControlCog(commands.Cog, name="Control"):
         await ctx.respond(f"🛑 Pathfind stop dispatched to **`{count}`** client(s).")
 
     @control.command(name="broadcast", description="Broadcast an in-game announcement to all connected clients")
+    @is_authorized()
     @option("message", description="Broadcast message text")
     async def cmd_broadcast(self, ctx: discord.ApplicationContext, message: str):
         server = self.bot.server
@@ -165,6 +174,7 @@ class ControlCog(commands.Cog, name="Control"):
 
     # Top-Level Direct Slash Command for Rebuilds
     @slash_command(name="build", description="Trigger instant git pull & gradle compilation", guild_ids=GUILD_IDS)
+    @is_authorized()
     async def direct_build(self, ctx: discord.ApplicationContext):
         await self.cmd_build(ctx)
 

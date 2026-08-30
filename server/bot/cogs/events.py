@@ -17,28 +17,11 @@ class EventsCog(commands.Cog, name="Events"):
 
     @commands.Cog.listener()
     async def on_player_join(self, player_name: str, info: dict):
-        embed = discord.Embed(
-            title="🎮 Player Connected",
-            description=f"**{player_name}** established connection to the Cloud WebSocket.",
-            color=0x34A853,
-            timestamp=datetime.utcnow()
-        )
-        embed.add_field(name="UUID", value=f"`{info.get('uuid', 'N/A')}`", inline=True)
-        embed.add_field(name="IP", value=f"`{info.get('ip', 'N/A')}`", inline=True)
-        embed.add_field(name="Mod Version", value=f"`v{info.get('version', '1.0.2')}`", inline=True)
-        embed.set_footer(text="NoemtAddons Telemetry")
-        await self.send_to_channel(embed)
+        pass
 
     @commands.Cog.listener()
     async def on_player_leave(self, player_name: str):
-        embed = discord.Embed(
-            title="🚪 Player Disconnected",
-            description=f"**{player_name}** disconnected from the Cloud WebSocket.",
-            color=0xF28B82,
-            timestamp=datetime.utcnow()
-        )
-        embed.set_footer(text="NoemtAddons Telemetry")
-        await self.send_to_channel(embed)
+        pass
 
     @commands.Cog.listener()
     async def on_build_started(self, trigger_source: str, branch: str, short_hash: str, commit_lines: str):

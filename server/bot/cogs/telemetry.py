@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from discord import SlashCommandGroup, option, slash_command
 from datetime import datetime
-from bot.util.constants import GUILD_IDS
+from bot.util.constants import GUILD_IDS, is_authorized
 
 
 class TelemetryCog(commands.Cog, name="Telemetry"):
@@ -55,6 +55,7 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
         await ctx.respond(embed=embed, ephemeral=True)
 
     @telemetry.command(name="status", description="Live server & mod telemetry")
+    @is_authorized()
     async def cmd_status(self, ctx: discord.ApplicationContext):
         server = self.bot.server
         if not server:
@@ -87,6 +88,7 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
         await ctx.respond(embed=embed)
 
     @telemetry.command(name="players", description="List active connected Minecraft client instances")
+    @is_authorized()
     async def cmd_players(self, ctx: discord.ApplicationContext):
         server = self.bot.server
         if not server:
@@ -122,6 +124,7 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
         await ctx.respond(embed=embed)
 
     @telemetry.command(name="info", description="View build artifact endpoints and SHA256 checksums")
+    @is_authorized()
     async def cmd_info(self, ctx: discord.ApplicationContext):
         server = self.bot.server
         if not server:
@@ -153,6 +156,7 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
         await ctx.respond(embed=embed)
 
     @telemetry.command(name="logs", description="View recent Gradle compilation output")
+    @is_authorized()
     async def cmd_logs(self, ctx: discord.ApplicationContext):
         server = self.bot.server
         if not server:
@@ -170,10 +174,12 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
 
     # Top-Level Direct Slash Commands for Quick Access
     @slash_command(name="status", description="Live server & mod telemetry", guild_ids=GUILD_IDS)
+    @is_authorized()
     async def direct_status(self, ctx: discord.ApplicationContext):
         await self.cmd_status(ctx)
 
     @slash_command(name="players", description="List active connected Minecraft clients", guild_ids=GUILD_IDS)
+    @is_authorized()
     async def direct_players(self, ctx: discord.ApplicationContext):
         await self.cmd_players(ctx)
 

@@ -30,6 +30,7 @@ class Bot(commands.Bot if HAS_DISCORD else BotBase):
         self.server = None  # Reference to the API / WebSocket server instance
         self.channel_id: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
         self.guild_ids: Optional[List[int]] = GUILD_IDS or get_guild_ids()
+        self.owner_ids=[1236047191290679326]
 
     def load_cogs(self):
         if not HAS_DISCORD:
