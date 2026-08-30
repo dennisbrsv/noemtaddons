@@ -50,8 +50,8 @@ open class NoemtaddonsConfig : Config() {
         var enabled: Boolean = true
 
         @Expose
-        @ConfigOption(name = "Trigger Health (Vanilla Hearts)", desc = "Vanilla hearts threshold (e.g. 3.0 hearts = 6 HP). When health drops below this, auto mask swap triggers.")
-        @ConfigEditorSlider(minValue = 1.0f, maxValue = 10.0f, minStep = 0.5f)
+        @ConfigOption(name = "Trigger Health (Vanilla Hearts)", desc = "Vanilla hearts threshold (e.g. 3.0 hearts = 6 HP). Max 9.5 hearts (10 hearts is banned to prevent protocol kicks).")
+        @ConfigEditorSlider(minValue = 1.0f, maxValue = 9.5f, minStep = 0.5f)
         @JvmField
         var triggerHearts: Float = 3.0f
 

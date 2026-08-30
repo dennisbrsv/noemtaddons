@@ -42,6 +42,10 @@ object AutoMaskManager {
         private set
     var bonzoCooldownUntilMs: Long = 0L
         private set
+    var spiritCooldownDurationMs: Long = 30_000L
+        private set
+    var bonzoCooldownDurationMs: Long = 212_000L
+        private set
 
     // Anti-spam and execution timestamps
     private var lastSwapExecutionMs: Long = 0L
@@ -85,7 +89,7 @@ object AutoMaskManager {
         return if (diff > 0) diff / 1000f else 0f
     }
 
-    // Scans inventory slots (0..35) for Bonzo's and Spirit Masks
+    // Scans inventory slots (0..35) for Bonzo's and Spirit Masks and parses lore-scaled cooldowns
     fun getTrackedMasks(): List<TrackedMaskItem> {
         val player = mc.player ?: return emptyList()
         val list = mutableListOf<TrackedMaskItem>()
@@ -96,6 +100,12 @@ object AutoMaskManager {
             if (stack.isEmpty) continue
 
             val maskType = MaskType.fromItemStack(stack) ?: continue
+            val parsedDuration = MaskType.parseCooldownMs(stack, maskType.baseCooldownMs)
+            when (maskType) {
+                MaskType.SPIRIT -> spiritCooldownDurationMs = parsedDuration
+                MaskType.BONZO -> bonzoCooldownDurationMs = parsedDuration
+            }
+
             val onCooldown = when (maskType) {
                 MaskType.SPIRIT -> now < spiritCooldownUntilMs
                 MaskType.BONZO -> now < bonzoCooldownUntilMs
@@ -111,6 +121,7 @@ object AutoMaskManager {
                     inventorySlot = i,
                     item = stack,
                     displayName = stack.cleanDisplayName,
+                    cooldownDurationMs = parsedDuration,
                     isOnCooldown = onCooldown,
                     cooldownRemainingMs = remainingMs
                 )
@@ -122,7 +133,15 @@ object AutoMaskManager {
     fun isWearingMask(): Boolean {
         val player = mc.player ?: return false
         val worn = player.getItemBySlot(EquipmentSlot.HEAD)
-        return MaskType.fromItemStack(worn) != null
+        val type = MaskType.fromItemStack(worn)
+        if (type != null) {
+            val parsedDuration = MaskType.parseCooldownMs(worn, type.baseCooldownMs)
+            when (type) {
+                MaskType.SPIRIT -> spiritCooldownDurationMs = parsedDuration
+                MaskType.BONZO -> bonzoCooldownDurationMs = parsedDuration
+            }
+        }
+        return type != null
     }
 
     fun getCurrentlyWornMaskType(): MaskType? {
@@ -207,9 +226,10 @@ object AutoMaskManager {
         // Do not trigger if already wearing a mask
         if (isWearingMask() || isMaskEquipped) return
 
-        // Check vanilla hearts threshold
+        // Check vanilla hearts threshold (10.0 full hearts is banned to prevent run-start protocol errors)
+        val threshold = config.triggerHearts.coerceIn(1.0f, 9.5f)
         val currentHearts = player.health / 2.0f
-        if (player.health > 0f && currentHearts <= config.triggerHearts) {
+        if (player.health > 0f && currentHearts <= threshold && currentHearts < 10.0f) {
             val now = System.currentTimeMillis()
             if (now - lastSwapExecutionMs >= 1500L && now >= swapCooldownUntilMs) {
                 triggerLowHealthSwap(currentHearts)
@@ -223,15 +243,18 @@ object AutoMaskManager {
 
         val config = ConfigManager.config.mask
 
-        // Filter masks by availability / cooldown
+        // Filter masks by availability - MUST NOT BE ON COOLDOWN!
         val offCooldownMasks = tracked.filter { !it.isOnCooldown }
-        val candidatePool = if (offCooldownMasks.isNotEmpty()) offCooldownMasks else tracked
+        if (offCooldownMasks.isEmpty()) {
+            // All tracked masks are on cooldown - plainly refuse to swap!
+            return
+        }
 
-        // Prioritize mask selection
+        // Prioritize mask selection among off-cooldown masks only
         val chosenMask = when (config.maskPriority) {
-            0 -> candidatePool.find { it.type == MaskType.SPIRIT } ?: candidatePool.first()
-            1 -> candidatePool.find { it.type == MaskType.BONZO } ?: candidatePool.first()
-            else -> candidatePool.first()
+            0 -> offCooldownMasks.find { it.type == MaskType.SPIRIT } ?: offCooldownMasks.find { it.type == MaskType.BONZO } ?: offCooldownMasks.first()
+            1 -> offCooldownMasks.find { it.type == MaskType.BONZO } ?: offCooldownMasks.find { it.type == MaskType.SPIRIT } ?: offCooldownMasks.first()
+            else -> offCooldownMasks.first()
         }
 
         val reason = "Low Health (${"%.1f".format(currentHearts)} ❤)"
@@ -241,6 +264,20 @@ object AutoMaskManager {
     fun swapToMask(target: TrackedMaskItem, reason: String = "Manual") {
         val player = mc.player ?: return
         if (isExecutingSwap) return
+
+        // Refuse to swap if the target mask is on cooldown
+        val isOnCooldown = when (target.type) {
+            MaskType.SPIRIT -> isSpiritOnCooldown()
+            MaskType.BONZO -> isBonzoOnCooldown()
+        }
+        if (isOnCooldown) {
+            val remainingSec = when (target.type) {
+                MaskType.SPIRIT -> getSpiritCooldownRemainingSeconds()
+                MaskType.BONZO -> getBonzoCooldownRemainingSeconds()
+            }
+            ChatUtils.modMessage("&b[AutoMask] &cCannot swap to &e${target.displayName}&c because it is on cooldown (&e${"%.1f".format(remainingSec)}s&c remaining)!")
+            return
+        }
 
         // Record currently worn helmet before swapping
         val headItem = player.getItemBySlot(EquipmentSlot.HEAD)
@@ -502,12 +539,16 @@ object AutoMaskManager {
         val isBonzoProc = BONZO_PROC_REGEX.containsMatchIn(clean)
 
         if (isSpiritProc) {
-            spiritCooldownUntilMs = System.currentTimeMillis() + MaskType.SPIRIT.baseCooldownMs
-            ChatUtils.modMessage("&b[AutoMask] &eSpirit Mask Second Wind procced! &7(30s Cooldown)")
+            val cdMs = spiritCooldownDurationMs
+            val cdSec = (cdMs / 1000f)
+            spiritCooldownUntilMs = System.currentTimeMillis() + cdMs
+            ChatUtils.modMessage("&b[AutoMask] &eSpirit Mask Second Wind procced! &7(${"%.0f".format(cdSec)}s Cooldown)")
             handleMaskProcTrigger(MaskType.SPIRIT)
         } else if (isBonzoProc) {
-            bonzoCooldownUntilMs = System.currentTimeMillis() + MaskType.BONZO.baseCooldownMs
-            ChatUtils.modMessage("&b[AutoMask] &eBonzo's Mask saved your life! &7(212s Cooldown)")
+            val cdMs = bonzoCooldownDurationMs
+            val cdSec = (cdMs / 1000f)
+            bonzoCooldownUntilMs = System.currentTimeMillis() + cdMs
+            ChatUtils.modMessage("&b[AutoMask] &eBonzo's Mask saved your life! &7(${"%.0f".format(cdSec)}s Cooldown)")
             handleMaskProcTrigger(MaskType.BONZO)
         }
     }

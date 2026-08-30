@@ -559,16 +559,37 @@ object NoemtaddonsClient : ClientModInitializer {
                     }
             )
             .then(
-                ClientCommands.literal("back")
-                    .executes {
-                        dev.noemt.client.features.mask.AutoMaskManager.swapBackToOriginalHelmet("Manual Command")
-                        1
-                    }
+                ClientCommands.literal("threshold")
+                    .then(
+                        ClientCommands.argument("hearts", com.mojang.brigadier.arguments.FloatArgumentType.floatArg(1.0f, 9.5f))
+                            .executes { ctx ->
+                                val hearts = com.mojang.brigadier.arguments.FloatArgumentType.getFloat(ctx, "hearts")
+                                val clamped = hearts.coerceIn(1.0f, 9.5f)
+                                ConfigManager.config.mask.triggerHearts = clamped
+                                ConfigManager.save()
+                                ChatUtils.modMessage("&b[AutoMask] &aTrigger threshold set to &e$clamped ❤ &7(${"%.1f".format(clamped * 2f)} HP)")
+                                1
+                            }
+                    )
+            )
+            .then(
+                ClientCommands.literal("hearts")
+                    .then(
+                        ClientCommands.argument("hearts", com.mojang.brigadier.arguments.FloatArgumentType.floatArg(1.0f, 9.5f))
+                            .executes { ctx ->
+                                val hearts = com.mojang.brigadier.arguments.FloatArgumentType.getFloat(ctx, "hearts")
+                                val clamped = hearts.coerceIn(1.0f, 9.5f)
+                                ConfigManager.config.mask.triggerHearts = clamped
+                                ConfigManager.save()
+                                ChatUtils.modMessage("&b[AutoMask] &aTrigger threshold set to &e$clamped ❤ &7(${"%.1f".format(clamped * 2f)} HP)")
+                                1
+                            }
+                    )
             )
             .executes {
                 val config = ConfigManager.config.mask
                 val state = if (config.enabled) "&aENABLED" else "&cDISABLED"
-                ChatUtils.modMessage("&b[AutoMask] &7State: $state &7| Trigger: &c${config.triggerHearts} ❤ &7| Subcommands: &e\$mask status&7, &e\$mask toggle&7, &e\$mask swap&7, &e\$mask revert")
+                ChatUtils.modMessage("&b[AutoMask] &7State: $state &7| Trigger: &c${config.triggerHearts} ❤ &7| Subcommands: &e\$mask status&7, &e\$mask toggle&7, &e\$mask threshold <1-9.5>&7, &e\$mask swap&7, &e\$mask revert")
                 1
             }
     }

@@ -734,7 +734,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
     # 3. Changelog
     if clean_path in ("/changelog", "/api/changelog"):
         changelog_p = Path(__file__).parent / "changelog.txt"
-        content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.1"
+        content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.2"
         send_http_response(writer, 200, "text/plain; charset=utf-8", content.encode("utf-8"))
         return
 
