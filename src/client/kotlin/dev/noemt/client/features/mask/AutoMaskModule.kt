@@ -47,12 +47,16 @@ object AutoMaskModule : Module {
             }
         }
 
-        // 4. World change & Run end reset
+        // 4. World change & Run start/end reset
         register<WorldChangeEvent> {
             AutoMaskManager.onWorldChange()
         }
 
         register<DungeonEvent.RunEndedEvent> {
+            AutoMaskManager.onWorldChange()
+        }
+
+        register<DungeonEvent.RunStatedEvent> {
             AutoMaskManager.onWorldChange()
         }
 

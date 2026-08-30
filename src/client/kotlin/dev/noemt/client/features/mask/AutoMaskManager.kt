@@ -62,6 +62,13 @@ object AutoMaskManager {
     var inEquipmentMenu: Boolean = false
         private set
 
+    // Instance / Area tracking
+    var lastDetectedInstance: dev.noemt.client.features.loadout.GameInstanceType? = null
+        private set
+    var lastDetectedArea: String = ""
+        private set
+    private var instanceCheckCounter = 0
+
     val isExecutingSwap: Boolean get() = currentStage != MaskSwapStage.IDLE
     val isSwapping: Boolean get() = isExecutingSwap || inEquipmentMenu || System.currentTimeMillis() < swapCooldownUntilMs
 
@@ -127,22 +134,42 @@ object AutoMaskManager {
     fun onTick() {
         val config = ConfigManager.config.mask
         val player = mc.player ?: run {
-            resetSwap()
+            resetFullState("Player is null")
             return
         }
 
-        // Safety timeout for ongoing automated swap
+        // 0. Safety timeout for ongoing automated swap (swap failure)
         if (isExecutingSwap && System.currentTimeMillis() - lastSwapExecutionMs > 4000L) {
-            resetSwap()
+            ChatUtils.modMessage("&c[AutoMask] Swap timed out (4s safety limit)! Resetting state.")
+            resetFullState("Swap Safety Timeout")
         }
 
-        // Check if player is dead or ghost
-        if (LoadoutManager.isPlayerDeadOrGhost()) {
-            if (isExecutingSwap) resetSwap()
+        // 1. Check if player is dead or ghost
+        if (LoadoutManager.isPlayerDeadOrGhost() || player.isDeadOrDying || !player.isAlive || player.health <= 0f) {
+            if (isExecutingSwap || isMaskEquipped || pendingRevertAfterChat) {
+                resetFullState("Player Death / Ghost")
+            }
             return
         }
 
-        // Process queued chat-triggered revert
+        // 2. Periodic Scoreboard / Instance Detection Check (every 10 ticks)
+        instanceCheckCounter++
+        if (instanceCheckCounter % 10 == 0) {
+            val detected = dev.noemt.client.utils.ScoreboardUtils.detectGameInstance()
+            if (detected != null) {
+                val (instanceType, areaName) = detected
+                val instanceChanged = instanceType != lastDetectedInstance || areaName != lastDetectedArea
+                if (instanceChanged) {
+                    lastDetectedInstance = instanceType
+                    lastDetectedArea = areaName
+                    if (isExecutingSwap || isMaskEquipped || pendingRevertAfterChat) {
+                        resetFullState("Instance Switch: $areaName ($instanceType)")
+                    }
+                }
+            }
+        }
+
+        // 3. Process queued chat-triggered revert
         if (pendingRevertAfterChat && !isExecutingSwap) {
             val now = System.currentTimeMillis()
             if (now >= queuedRevertTimeMs) {
@@ -151,7 +178,7 @@ object AutoMaskManager {
             }
         }
 
-        // Optional Auto-Revert Timeout check if mask never procced
+        // 4. Optional Auto-Revert Timeout check if mask never procced
         if (isMaskEquipped && config.autoRevertTimeout > 0f && !isExecutingSwap && !pendingRevertAfterChat) {
             val activeDurationSec = (System.currentTimeMillis() - maskEquippedTimeMs) / 1000f
             if (activeDurationSec >= config.autoRevertTimeout) {
@@ -160,13 +187,13 @@ object AutoMaskManager {
             }
         }
 
-        // Process active GUI swap state machine
+        // 5. Process active GUI swap state machine
         if (currentStage != MaskSwapStage.IDLE) {
             processSwapStateMachine()
             return
         }
 
-        // Health Monitoring Check
+        // 6. Health Monitoring Check
         if (!config.enabled) return
         if (!LocationUtils.inSkyblock && !LocationUtils.inDungeon) return
 
@@ -312,8 +339,9 @@ object AutoMaskManager {
                     stageTargetTimeMs = now + guiOpenDelay
                     currentStage = MaskSwapStage.GUI_OPEN_WAIT
                 } else if (now >= guiWaitTimeoutMs) {
-                    ChatUtils.modMessage("&e[AutoMask] /equipment GUI open timed out.")
-                    currentStage = MaskSwapStage.FINALIZE
+                    ChatUtils.modMessage("&c[AutoMask] /equipment GUI open timed out! Swap failed, resetting state.")
+                    resetFullState("GUI Open Timeout (Swap Failed)")
+                    return
                 }
             }
 
@@ -326,7 +354,11 @@ object AutoMaskManager {
                         // Regular click (PICKUP) on the item
                         mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
                     } else {
-                        ChatUtils.modMessage("&c[AutoMask] Could not find target item in /equipment container slots.")
+                        ChatUtils.modMessage("&c[AutoMask] Could not find target item in /equipment! Swap failed, resetting state.")
+                        player.closeContainer()
+                        mc.setScreen(null)
+                        resetFullState("Item Not Found in GUI (Swap Failed)")
+                        return
                     }
 
                     val postClickDelay = Random.nextLong(60, 95)
@@ -457,6 +489,15 @@ object AutoMaskManager {
     fun onChatMessage(unformattedText: String) {
         val clean = unformattedText.removeFormatting().trim()
 
+        // Detect player death in chat to immediately reset state
+        if (clean.contains("You died and became a ghost", ignoreCase = true) ||
+            clean.contains("You died.", ignoreCase = true) ||
+            (clean.startsWith("☠") && clean.contains("You were killed by", ignoreCase = true)) ||
+            (clean.startsWith("☠") && clean.contains("You died", ignoreCase = true))) {
+            resetFullState("Player Death (Chat)")
+            return
+        }
+
         val isSpiritProc = SPIRIT_PROC_REGEX.containsMatchIn(clean)
         val isBonzoProc = BONZO_PROC_REGEX.containsMatchIn(clean)
 
@@ -503,28 +544,40 @@ object AutoMaskManager {
     }
 
     fun onPlayerDeath() {
-        resetSwap()
-        isMaskEquipped = false
-        activeMaskType = null
-        pendingRevertAfterChat = false
-        pendingAutoClose = false
+        resetFullState("Player Death Event")
     }
 
     fun onWorldChange() {
-        resetSwap()
-        isMaskEquipped = false
-        activeMaskType = null
-        originalHelmet = null
-        originalLoadoutId = null
-        pendingRevertAfterChat = false
-        pendingAutoClose = false
-        inEquipmentMenu = false
-        lastOpenContainerId = 0
+        lastDetectedInstance = null
+        lastDetectedArea = ""
+        instanceCheckCounter = 0
+        resetFullState("World/Instance Change")
     }
 
     private fun resetSwap() {
         currentStage = MaskSwapStage.IDLE
         stageTargetTimeMs = 0L
+        swapCooldownUntilMs = System.currentTimeMillis() + 150L
+        MouseRotationHelper.isSuppressed = false
+    }
+
+    fun resetFullState(reason: String = "") {
+        currentStage = MaskSwapStage.IDLE
+        currentMode = MaskSwapMode.EQUIP_MASK
+        stageTargetTimeMs = 0L
+        guiWaitTimeoutMs = 0L
+        targetInventorySlot = -1
+        pendingReason = ""
+        lastOpenContainerId = 0
+        inEquipmentMenu = false
+        pendingAutoClose = false
+        pendingRevertAfterChat = false
+        queuedRevertTimeMs = 0L
+        isMaskEquipped = false
+        activeMaskType = null
+        originalHelmet = null
+        originalLoadoutId = null
+        maskEquippedTimeMs = 0L
         swapCooldownUntilMs = System.currentTimeMillis() + 150L
         MouseRotationHelper.isSuppressed = false
     }
