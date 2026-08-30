@@ -19,6 +19,7 @@ import dev.noemt.client.utils.map.utils.ScanUtils
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.EquipmentSlot
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.entity.TamableAnimal
 import net.minecraft.world.entity.ambient.Bat
@@ -221,19 +222,6 @@ object AutoBloodCamp : Module {
 
             val roomCenterPos = getBloodRoomCenter() ?: player.blockPosition()
             val roomCenterFloor = Vec3(roomCenterPos.x + 0.5, 69.5, roomCenterPos.z + 0.5)
-
-            fun isWatcher(entity: LivingEntity): Boolean {
-                if (entity == BloodCamp.watcherEntity) return true
-                val name = entity.customName?.string?.removeFormatting() ?: (entity as? Player)?.gameProfile?.name ?: ""
-                if (name.contains("The Watcher", ignoreCase = true) || name.equals("Watcher", ignoreCase = true)) return true
-                val headItem = entity.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD)
-                if (!headItem.isEmpty) {
-                    val skull = ItemUtils.getSkullTexture(headItem)
-                    if (skull != null && skull in BloodCamp.watcherSkulls) return true
-                }
-                if (entity is Zombie && entity.y > 81.0) return true
-                return false
-            }
 
             // 3. Primed TNT Detection & Evasion (Fabric 26.1.2 entity query & 2D/3D collision avoidance)
             val level = mc.level ?: return@register
@@ -573,13 +561,57 @@ object AutoBloodCamp : Module {
         return false
     }
 
+    fun isWatcher(entity: net.minecraft.world.entity.Entity?): Boolean {
+        if (entity == null) return false
+        if (entity == BloodCamp.watcherEntity) return true
+        if (BloodCamp.watcherEntity != null && entity.id == BloodCamp.watcherEntity?.id) return true
+
+        val name = entity.customName?.string?.removeFormatting()
+            ?: (entity as? Player)?.gameProfile?.name
+            ?: (entity as? ArmorStand)?.name?.string?.removeFormatting()
+            ?: ""
+        if (name.contains("The Watcher", ignoreCase = true) || name.contains("Watcher", ignoreCase = true)) return true
+
+        val headItem = when (entity) {
+            is LivingEntity -> entity.getItemBySlot(EquipmentSlot.HEAD)
+            is ArmorStand -> entity.getItemBySlot(EquipmentSlot.HEAD)
+            else -> null
+        }
+        if (headItem != null && !headItem.isEmpty) {
+            val skull = ItemUtils.getSkullTexture(headItem)
+            if (skull != null && skull in BloodCamp.watcherSkulls) return true
+        }
+
+        if (entity is Zombie && entity.y > 80.0) return true
+        return false
+    }
+
     private fun tryAttack(entity: LivingEntity?) {
         val player = mc.player ?: return
         val config = ConfigManager.config.blood
 
+        // STRICT WATCHER PROTECTION: Never attack or swing at the Watcher
+        if (entity != null && isWatcher(entity)) {
+            return
+        }
+
         // STRICT TEAMMATE PROTECTION: Never attack or swing at a dungeon teammate
         if (entity is Player && isDungeonTeammate(entity)) {
             return
+        }
+
+        // If crosshair or raycast hit is on the Watcher or a teammate, do not swing / left click
+        val hovered = mc.crosshairPickEntity
+        if (hovered != null) {
+            if (isWatcher(hovered)) return
+            if (hovered is Player && isDungeonTeammate(hovered)) return
+        }
+
+        val hit = mc.hitResult
+        if (hit is net.minecraft.world.phys.EntityHitResult) {
+            val hitEntity = hit.entity
+            if (isWatcher(hitEntity)) return
+            if (hitEntity is Player && isDungeonTeammate(hitEntity)) return
         }
 
         if (config.bloodWeaponSlot in 1..9) {
