@@ -173,6 +173,10 @@ object AutoMaskManager {
         // Boss Room Check (unless configured otherwise)
         if (LocationUtils.inBoss && !config.allowInBoss) return
 
+        // If player is normally wearing a Spirit Mask (e.g. during clear), completely ignore the feature
+        val wornType = getCurrentlyWornMaskType()
+        if (wornType == MaskType.SPIRIT && !isMaskEquipped) return
+
         // Do not trigger if already wearing a mask
         if (isWearingMask() || isMaskEquipped) return
 
@@ -319,8 +323,8 @@ object AutoMaskManager {
                     val targetSlot = findTargetContainerSlot(player)
 
                     if (targetSlot != null && targetSlot in 0 until player.containerMenu.slots.size) {
-                        // Shift-click (QUICK_MOVE) the item to equip it into armor slot
-                        mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.QUICK_MOVE, player)
+                        // Regular click (PICKUP) on the item
+                        mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
                     } else {
                         ChatUtils.modMessage("&c[AutoMask] Could not find target item in /equipment container slots.")
                     }
@@ -462,13 +466,14 @@ object AutoMaskManager {
             handleMaskProcTrigger(MaskType.SPIRIT)
         } else if (isBonzoProc) {
             bonzoCooldownUntilMs = System.currentTimeMillis() + MaskType.BONZO.baseCooldownMs
-            ChatUtils.modMessage("&b[AutoMask] &eBonzo's Mask saved your life! &7(180s Cooldown)")
+            ChatUtils.modMessage("&b[AutoMask] &eBonzo's Mask saved your life! &7(212s Cooldown)")
             handleMaskProcTrigger(MaskType.BONZO)
         }
     }
 
     private fun handleMaskProcTrigger(maskType: MaskType) {
-        if (isMaskEquipped || isWearingMask() || isExecutingSwap) {
+        // Only revert if AutoMask actively performed a swap to this mask and has an original helmet to restore
+        if (isMaskEquipped && originalHelmet != null) {
             val delayMs = ConfigManager.config.mask.swapBackDelayMs.toLong()
             queuedRevertTimeMs = System.currentTimeMillis() + delayMs
             pendingRevertAfterChat = true

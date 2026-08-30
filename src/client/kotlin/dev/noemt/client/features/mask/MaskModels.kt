@@ -4,7 +4,7 @@ import net.minecraft.world.item.ItemStack
 
 enum class MaskType(val displayName: String, val skyblockId: String, val baseCooldownMs: Long) {
     SPIRIT("Spirit Mask", "SPIRIT_MASK", 30_000L),
-    BONZO("Bonzo's Mask", "BONZO_MASK", 180_000L);
+    BONZO("Bonzo's Mask", "BONZO_MASK", 212_000L);
 
     companion object {
         val SPIRIT_ITEM_REGEX = Regex("""(?:\bSpirit\s+Mask\b)""", RegexOption.IGNORE_CASE)
