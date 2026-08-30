@@ -2,9 +2,7 @@ import discord
 from discord.ext import commands
 from discord import SlashCommandGroup, option, slash_command
 from datetime import datetime
-from bot.util.constants import GUILD_IDS
-from util.constants import is_authorized
-
+from bot.util.constants import GUILD_IDS, is_authorized
 
 class ControlCog(commands.Cog, name="Control"):
     def __init__(self, bot):
