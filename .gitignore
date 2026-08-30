@@ -40,3 +40,19 @@ replay_*.log
 *.jfr
 
 server/changelog.txt
+
+# Server database & secrets
+*.db
+server/*.db
+server/server.db
+server_auth.json
+server/server_auth.json
+.env
+*.env
+server/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+server/__pycache__/

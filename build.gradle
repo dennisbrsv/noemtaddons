@@ -87,46 +87,6 @@ def createBuildProps(String buildType) {
 	return dir
 }
 
-def shadowCheat = tasks.register('shadowJarCheat', ShadowJar) {
-	group = "build"
-	description = "Builds the cheat version shadow jar."
-	configurations = [project.configurations.shadowModImpl]
-	from sourceSets.main.output
-	from sourceSets.client.output
-	from({ createBuildProps("cheat") })
-	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-	exclude "moulconfig.accesswidener"
-	relocate "io.github.notenoughupdates.moulconfig", "dev.noemt.client.deps.moulconfig"
-	archiveClassifier.set("cheat")
-	mergeServiceFiles()
-
-	def projectName = project.name
-	inputs.property "projectName", projectName
-	from("LICENSE") {
-		rename { "${it}_$projectName" }
-	}
-}
-
-def shadowLegit = tasks.register('shadowJarLegit', ShadowJar) {
-	group = "build"
-	description = "Builds the legit version shadow jar."
-	configurations = [project.configurations.shadowModImpl]
-	from sourceSets.main.output
-	from sourceSets.client.output
-	from({ createBuildProps("legit") })
-	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-	exclude "moulconfig.accesswidener"
-	relocate "io.github.notenoughupdates.moulconfig", "dev.noemt.client.deps.moulconfig"
-	archiveClassifier.set("legit")
-	mergeServiceFiles()
-
-	def projectName = project.name
-	inputs.property "projectName", projectName
-	from("LICENSE") {
-		rename { "${it}_$projectName" }
-	}
-}
-
 tasks.shadowJar {
 	configurations = [project.configurations.shadowModImpl]
 	from sourceSets.main.output
@@ -145,52 +105,34 @@ tasks.shadowJar {
 	}
 }
 
-tasks.register('buildCheat') {
-	group = "build"
-	description = "Builds the cheat version jar."
-	dependsOn shadowCheat
-}
-
-tasks.register('buildLegit') {
-	group = "build"
-	description = "Builds the legit version jar."
-	dependsOn shadowLegit
-}
-
-def createLoaderProps(String flavor) {
-	def dir = file("${layout.buildDirectory.get().asFile}/generated/loaderProps/${flavor}")
+def createLoaderProps() {
+	def dir = file("${layout.buildDirectory.get().asFile}/generated/loaderProps")
 	dir.mkdirs()
 	def propFile = file("${dir}/loader-info.properties")
-	propFile.text = "flavor=${flavor}\nversion=${project.version}\n"
+	propFile.text = "flavor=cheat\nversion=${project.version}\n"
 	return dir
 }
 
-def createLoaderJar(String name, String flavor) {
-	return tasks.register(name, Jar) {
-		group = "build"
-		description = "Builds the ${flavor} mod-loader jar."
-		from(sourceSets.client.output) {
-			include "dev/noemt/loader/**"
-		}
-		from(createLoaderProps(flavor))
-		from("src/client/resources/fabric.mod.loader.json") {
-			rename { "fabric.mod.json" }
-		}
-		from("src/client/resources/noemtaddons.client.mixins.json")
-		archiveBaseName.set("noemtaddons-${flavor}-loader")
-		archiveClassifier.set("")
-		destinationDirectory.set(file("${layout.buildDirectory.get().asFile}/libs"))
+def loaderJar = tasks.register('loaderJar', Jar) {
+	group = "build"
+	description = "Builds the NoemtAddons mod-loader bootstrap jar."
+	from(sourceSets.client.output) {
+		include "dev/noemt/loader/**"
 	}
+	from(createLoaderProps())
+	from("src/client/resources/fabric.mod.loader.json") {
+		rename { "fabric.mod.json" }
+	}
+	from("src/client/resources/noemtaddons.client.mixins.json")
+	archiveBaseName.set("noemtaddons-loader")
+	archiveClassifier.set("")
+	destinationDirectory.set(file("${layout.buildDirectory.get().asFile}/libs"))
 }
 
-def loaderLegit = createLoaderJar("loaderJarLegit", "legit")
-def loaderCheat = createLoaderJar("loaderJarCheat", "cheat")
-
-tasks.register('buildLoaders') {
+tasks.register('buildLoader') {
 	group = "build"
-	description = "Builds both legit and cheat loader JARs."
-	dependsOn loaderLegit
-	dependsOn loaderCheat
+	description = "Builds the loader JAR."
+	dependsOn loaderJar
 }
 
 tasks.jar {
@@ -199,10 +141,7 @@ tasks.jar {
 
 tasks.assemble {
 	dependsOn tasks.shadowJar
-	dependsOn shadowCheat
-	dependsOn shadowLegit
-	dependsOn loaderLegit
-	dependsOn loaderCheat
+	dependsOn loaderJar
 }
 
 publishing {

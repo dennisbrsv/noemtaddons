@@ -48,9 +48,7 @@ public class NoemtLoader implements PreLaunchEntrypoint, ClientModInitializer {
 
     @Override
     public void onPreLaunch() {
-        String flavor = getFlavor();
-        String flavorName = flavor.equals("legit") ? "Legit" : "Cheat";
-        LOGGER.info("[NoemtLoader] PreLaunch: Bootstrapping NoemtAddons {}...", flavorName);
+        LOGGER.info("[NoemtLoader] PreLaunch: Bootstrapping NoemtAddons...");
 
         Path gameDir = FabricLoader.getInstance().getGameDir();
         Path cacheDir = gameDir.resolve("noemtaddons").resolve("cache");
@@ -58,9 +56,9 @@ public class NoemtLoader implements PreLaunchEntrypoint, ClientModInitializer {
             Files.createDirectories(cacheDir);
         } catch (Exception ignored) {}
 
-        File jarFile = cacheDir.resolve("noemtaddons-" + flavor + ".jar").toFile();
+        File jarFile = cacheDir.resolve("noemtaddons.jar").toFile();
         targetJarFile = jarFile;
-        String downloadUrl = SERVER_BASE + "/loaders/noemtaddons-" + flavor + ".jar";
+        String downloadUrl = SERVER_BASE + "/loaders/noemtaddons.jar";
 
         // 1. Download or update payload jar before Mixins/Classes are initialized
         try {
@@ -106,7 +104,7 @@ public class NoemtLoader implements PreLaunchEntrypoint, ClientModInitializer {
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(6000);
         conn.setReadTimeout(15000);
-        conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.2 (" + getFlavor() + ")");
+        conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.2");
 
         if (destination.exists()) {
             conn.setIfModifiedSince(destination.lastModified());

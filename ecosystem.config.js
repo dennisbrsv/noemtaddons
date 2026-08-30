@@ -1,12 +1,14 @@
 module.exports = {
   apps: [
     {
-      name: "noemtaddons-server",
-      script: "server/server.py",
+      name: "noemtaddons-control-plane",
+      script: "server/main.py",
       interpreter: "python3",
-      args: "--host 0.0.0.0 --port 8765 --branch master --poll-interval 60",
+      args: "--host 0.0.0.0 --port 8765",
       env: {
-        DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL"
+        DISCORD_BOT_TOKEN: "YOUR_DISCORD_BOT_TOKEN_HERE",
+        DISCORD_CHANNEL_ID: "YOUR_DISCORD_CHANNEL_ID_HERE",
+        AUTH_SECRET: ""
       },
       autorestart: true,
       restart_delay: 5000,

@@ -24,6 +24,7 @@ import subprocess
 import email.utils
 import urllib.request
 import urllib.parse
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
@@ -40,8 +41,9 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 # Paths & Config
 REPO_DIR: Path = Path(__file__).parent.parent
 JARS_DIR: Path = REPO_DIR / "build" / "libs"
-AUTH_FILE: Path = Path(__file__).parent / "server_auth.json"
-DISCORD_WEBHOOK: Optional[str] = os.getenv("DISCORD_WEBHOOK_URL")
+DB_PATH: Path = Path(__file__).parent / "server.db"
+DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
+DISCORD_CHANNEL_ID: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
 GIT_BRANCH: str = "master"
 POLL_INTERVAL: int = 0
 AUTH_SECRET: Optional[str] = None
@@ -49,32 +51,167 @@ AUTH_SECRET: Optional[str] = None
 # Runtime State
 clients: Dict[str, dict] = {}
 ws_to_player: Dict[asyncio.StreamWriter, str] = {}
-active_sessions: set = set()
-ADMIN_USER = "nom"
-ADMIN_PASSWORD = ""
 IS_BUILDING: bool = False
 LAST_BUILD_STATUS: str = "Healthy"
 LAST_BUILD_TIME: str = "N/A"
 LAST_BUILD_OUTPUT: str = "No builds executed yet."
 
 
-def init_auth(custom_password: Optional[str] = None):
-    """Initializes or loads the persistent admin credentials."""
-    global ADMIN_PASSWORD
-    if custom_password:
-        ADMIN_PASSWORD = custom_password
-    elif AUTH_FILE.exists():
-        try:
-            data = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
-            ADMIN_PASSWORD = data.get("password", secrets.token_urlsafe(12))
-        except Exception:
-            ADMIN_PASSWORD = secrets.token_urlsafe(12)
-    else:
-        ADMIN_PASSWORD = secrets.token_urlsafe(12)
-        AUTH_FILE.write_text(json.dumps({"username": ADMIN_USER, "password": ADMIN_PASSWORD}, indent=2), encoding="utf-8")
+# ==============================================================================
+# Database & Authentication Layer (SQLite)
+# ==============================================================================
 
-    token = hashlib.sha256(f"{ADMIN_USER}:{ADMIN_PASSWORD}".encode()).hexdigest()
-    active_sessions.add(token)
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Initializes the SQLite database schema for users and sessions."""
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at REAL NOT NULL
+            )
+        """)
+        conn.commit()
+
+
+def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
+    if not salt:
+        salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        200_000
+    )
+    return key.hex(), salt
+
+
+def verify_password(password: str, expected_hash: str, salt: str) -> bool:
+    computed_hash, _ = hash_password(password, salt)
+    return secrets.compare_digest(computed_hash, expected_hash)
+
+
+def has_admin_user() -> bool:
+    with get_db() as conn:
+        row = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
+        return (row["count"] if row else 0) > 0
+
+
+def get_admin_username() -> str:
+    with get_db() as conn:
+        row = conn.execute("SELECT username FROM users ORDER BY id ASC LIMIT 1").fetchone()
+        return row["username"] if row else "nom"
+
+
+def register_admin(username: str, password: str) -> Tuple[bool, str]:
+    """Registers the initial admin user. Strictly allowed ONLY ONCE ever."""
+    username = username.strip()
+    password = password.strip()
+    if len(username) < 3:
+        return False, "Username must be at least 3 characters long."
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters long."
+
+    with get_db() as conn:
+        row = conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
+        if row and row["count"] > 0:
+            return False, "Registration is permanently locked. An operator account already exists."
+
+        pwd_hash, salt = hash_password(password)
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, password_salt) VALUES (?, ?, ?)",
+                (username, pwd_hash, salt)
+            )
+            conn.commit()
+            return True, "Success"
+        except sqlite3.IntegrityError:
+            return False, "Username already taken."
+
+
+def verify_login(username: str, password: str) -> bool:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT password_hash, password_salt FROM users WHERE username = ?",
+            (username.strip(),)
+        ).fetchone()
+        if not row:
+            return False
+        return verify_password(password, row["password_hash"], row["password_salt"])
+
+
+def create_session(username: str) -> str:
+    token = secrets.token_urlsafe(32)
+    expires_at = time.time() + (7 * 24 * 3600)  # 7 days
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO sessions (token, username, expires_at) VALUES (?, ?, ?)",
+            (token, username, expires_at)
+        )
+        conn.commit()
+    return token
+
+
+def get_authenticated_user(headers: dict) -> Optional[str]:
+    cookie_str = headers.get("cookie", "")
+    token = None
+    for cookie in cookie_str.split(";"):
+        if "=" in cookie:
+            k, v = cookie.strip().split("=", 1)
+            if k == "noemt_session":
+                token = v
+                break
+    if not token:
+        return None
+
+    now = time.time()
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT username, expires_at FROM sessions WHERE token = ?",
+            (token,)
+        ).fetchone()
+        if row:
+            if row["expires_at"] > now:
+                return row["username"]
+            else:
+                conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+                conn.commit()
+    return None
+
+
+def is_authenticated(headers: dict) -> bool:
+    return get_authenticated_user(headers) is not None
+
+
+def destroy_session(headers: dict):
+    cookie_str = headers.get("cookie", "")
+    token = None
+    for cookie in cookie_str.split(";"):
+        if "=" in cookie:
+            k, v = cookie.strip().split("=", 1)
+            if k == "noemt_session":
+                token = v
+                break
+    if token:
+        with get_db() as conn:
+            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            conn.commit()
 
 
 def get_project_version() -> str:
@@ -89,13 +226,15 @@ def get_project_version() -> str:
     return "1.0.2"
 
 
-def get_jar_path(flavor: str) -> Optional[Path]:
+def get_jar_path(flavor: str = "mod") -> Optional[Path]:
     ver = get_project_version()
     candidates = [
-        JARS_DIR / f"noemtaddons-{ver}-{flavor}.jar",
-        JARS_DIR / f"noemtaddons-{flavor}.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-{flavor}.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-{ver}-{flavor}.jar",
+        JARS_DIR / f"noemtaddons-{ver}.jar",
+        JARS_DIR / "noemtaddons.jar",
+        JARS_DIR / f"noemtaddons-{ver}-cheat.jar",
+        JARS_DIR / "noemtaddons-cheat.jar",
+        Path(__file__).parent / "jars" / "noemtaddons.jar",
+        Path(__file__).parent / "jars" / f"noemtaddons-{ver}.jar",
     ]
     for p in candidates:
         if p.exists() and p.is_file() and p.stat().st_size > 0:
@@ -104,7 +243,7 @@ def get_jar_path(flavor: str) -> Optional[Path]:
     for d in (JARS_DIR, Path(__file__).parent / "jars"):
         if d.exists():
             matches = [
-                p for p in d.glob(f"*{flavor}*.jar")
+                p for p in d.glob("*.jar")
                 if p.is_file() and p.stat().st_size > 0 and "loader" not in p.name.lower() and "sources" not in p.name.lower()
             ]
             if matches:
@@ -112,13 +251,15 @@ def get_jar_path(flavor: str) -> Optional[Path]:
     return None
 
 
-def get_loader_jar_path(flavor: str) -> Optional[Path]:
+def get_loader_jar_path(flavor: str = "loader") -> Optional[Path]:
     ver = get_project_version()
     candidates = [
-        JARS_DIR / f"noemtaddons-{flavor}-loader-{ver}.jar",
-        JARS_DIR / f"noemtaddons-{flavor}-loader.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-{flavor}-loader-{ver}.jar",
-        Path(__file__).parent / "jars" / f"noemtaddons-{flavor}-loader.jar",
+        JARS_DIR / f"noemtaddons-loader-{ver}.jar",
+        JARS_DIR / "noemtaddons-loader.jar",
+        JARS_DIR / f"noemtaddons-cheat-loader-{ver}.jar",
+        JARS_DIR / "noemtaddons-cheat-loader.jar",
+        Path(__file__).parent / "jars" / "noemtaddons-loader.jar",
+        Path(__file__).parent / "jars" / f"noemtaddons-loader-{ver}.jar",
     ]
     for p in candidates:
         if p.exists() and p.is_file() and p.stat().st_size > 0:
@@ -127,7 +268,7 @@ def get_loader_jar_path(flavor: str) -> Optional[Path]:
     for d in (JARS_DIR, Path(__file__).parent / "jars"):
         if d.exists():
             matches = [
-                p for p in d.glob(f"*{flavor}*loader*.jar")
+                p for p in d.glob("*loader*.jar")
                 if p.is_file() and p.stat().st_size > 0 and "sources" not in p.name.lower()
             ]
             if matches:
@@ -138,14 +279,14 @@ def get_loader_jar_path(flavor: str) -> Optional[Path]:
 def get_file_info(file_path: Path) -> dict:
     if not file_path.exists():
         return {"exists": False, "size": 0, "sha256": ""}
-    
+
     sha = hashlib.sha256()
     size = 0
     with open(file_path, "rb") as f:
         while chunk := f.read(65536):
             sha.update(chunk)
             size += len(chunk)
-    
+
     return {
         "exists": True,
         "size": size,
@@ -155,11 +296,11 @@ def get_file_info(file_path: Path) -> dict:
 
 
 def compute_version_metadata() -> dict:
-    legit_p = get_jar_path("legit")
-    cheat_p = get_jar_path("cheat")
+    mod_p = get_jar_path("mod")
+    loader_p = get_loader_jar_path("loader")
 
-    legit_info = get_file_info(legit_p) if legit_p else {"exists": False}
-    cheat_info = get_file_info(cheat_p) if cheat_p else {"exists": False}
+    mod_info = get_file_info(mod_p) if mod_p else {"exists": False}
+    loader_info = get_file_info(loader_p) if loader_p else {"exists": False}
 
     return {
         "version": get_project_version(),
@@ -167,45 +308,44 @@ def compute_version_metadata() -> dict:
         "last_build": LAST_BUILD_TIME,
         "build_status": LAST_BUILD_STATUS,
         "endpoints": {
-            "legit": {
-                "url": "https://addons.noemt.dev/loaders/noemtaddons-legit.jar",
-                "filename": legit_p.name if legit_p else "noemtaddons-legit.jar",
-                "sha256": legit_info.get("sha256", ""),
-                "size": legit_info.get("size", 0),
-                "modified": legit_info.get("modified", "")
+            "mod": {
+                "url": "https://addons.noemt.dev/loaders/noemtaddons.jar",
+                "filename": mod_p.name if mod_p else "noemtaddons.jar",
+                "sha256": mod_info.get("sha256", ""),
+                "size": mod_info.get("size", 0),
+                "modified": mod_info.get("modified", "")
             },
-            "cheat": {
-                "url": "https://addons.noemt.dev/loaders/noemtaddons-cheat.jar",
-                "filename": cheat_p.name if cheat_p else "noemtaddons-cheat.jar",
-                "sha256": cheat_info.get("sha256", ""),
-                "size": cheat_info.get("size", 0),
-                "modified": cheat_info.get("modified", "")
+            "loader": {
+                "url": "https://addons.noemt.dev/download/loader",
+                "filename": loader_p.name if loader_p else "noemtaddons-loader.jar",
+                "sha256": loader_info.get("sha256", ""),
+                "size": loader_info.get("size", 0),
+                "modified": loader_info.get("modified", "")
             }
         }
     }
 
 
 # ==============================================================================
-# Discord Webhook Notifications
+# Discord Bot Notifications (Direct REST API)
 # ==============================================================================
 
-def send_discord_webhook(webhook_url: str, title: str, description: str, color: int, fields: list, footer: str = "Noemt Cloud CI/CD"):
-    if not webhook_url:
+def send_discord_bot_notification(title: str, description: str, color: int, fields: Optional[List[dict]] = None, footer: str = "Noemt Cloud Bot"):
+    """Dispatches notifications through the Discord Bot API to the configured channel."""
+    if not DISCORD_BOT_TOKEN or not DISCORD_CHANNEL_ID:
         return
 
+    url = f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL_ID}/messages"
     payload = {
-        "username": "pragmatic play",
-        "avatar_url": "https://play-lh.googleusercontent.com/Hzs48fm7C1x3qZA8BBDV1JqP5fg49HyQ34gyGlodnkK2uv8pbchsTL4WIlAr_N290ekjiJHyIhVUuxmj-6Y1IQ",
         "embeds": [
             {
                 "title": title,
                 "description": description,
                 "color": color,
-                "fields": fields,
+                "fields": fields or [],
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "footer": {
-                    "text": footer,
-                    "icon_url": "https://play-lh.googleusercontent.com/Hzs48fm7C1x3qZA8BBDV1JqP5fg49HyQ34gyGlodnkK2uv8pbchsTL4WIlAr_N290ekjiJHyIhVUuxmj-6Y1IQ"
+                    "text": footer
                 }
             }
         ]
@@ -214,17 +354,19 @@ def send_discord_webhook(webhook_url: str, title: str, description: str, color: 
     def _post():
         try:
             req = urllib.request.Request(
-                webhook_url,
+                url,
                 data=json.dumps(payload).encode("utf-8"),
                 headers={
+                    "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
                     "Content-Type": "application/json",
-                    "User-Agent": "NoemtCloud-Server/1.0"
-                }
+                    "User-Agent": "NoemtCloud-BotClient/1.0"
+                },
+                method="POST"
             )
             with urllib.request.urlopen(req, timeout=8) as resp:
                 pass
         except Exception as err:
-            logger.error(f"Discord Webhook delivery error: {err}")
+            logger.warning(f"Discord Bot notification delivery error: {err}")
 
     asyncio.get_event_loop().run_in_executor(None, _post)
 
@@ -315,10 +457,11 @@ class AutoBuilder:
         changelog_path.write_text(formatted_changelog, encoding="utf-8")
 
         # 3. Discord Notification
-        if DISCORD_WEBHOOK:
-            commit_lines = "\n".join([f"• `{c['hash']}` {c['message']} *(by {c['author']})*" for c in (commits or [{'hash': short_hash, 'message': latest_msg, 'author': author}])[:5]])
-            send_discord_webhook(
-                DISCORD_WEBHOOK,
+        commit_lines = "\n".join([f"• `{c['hash']}` {c['message']} *(by {c['author']})*" for c in (commits or [{'hash': short_hash, 'message': latest_msg, 'author': author}])[:5]])
+        if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
+            SERVER_INSTANCE.bot.dispatch("build_started", trigger_source, GIT_BRANCH, short_hash, commit_lines)
+        elif DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID:
+            send_discord_bot_notification(
                 title=f"Build Triggered (`{short_hash}`)",
                 description=f"**Trigger:** `{trigger_source}`\n**Branch:** `{GIT_BRANCH}`\n\n**Commit Details:**\n{commit_lines}",
                 color=0xFBBC04,
@@ -345,18 +488,18 @@ class AutoBuilder:
             logger.info(f"✅ Build pipeline completed in {build_duration}s!")
 
             meta = compute_version_metadata()
-            legit_size_kb = meta['endpoints']['legit']['size'] / 1024
-            cheat_size_kb = meta['endpoints']['cheat']['size'] / 1024
+            mod_size_kb = meta['endpoints']['mod']['size'] / 1024
 
-            if DISCORD_WEBHOOK:
+            if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
+                SERVER_INSTANCE.bot.dispatch("build_completed", True, build_duration, short_hash, author, latest_msg, mod_size_kb)
+            elif DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID:
                 fields = [
                     {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
                     {"name": "Commit", "value": f"`{short_hash}` ({author})", "inline": True},
                     {"name": "Build Time", "value": f"`{build_duration}s`", "inline": True},
-                    {"name": "Mod", "value": f"`{cheat_size_kb:.1f} KB`", "inline": True},
+                    {"name": "Mod Size", "value": f"`{mod_size_kb:.1f} KB`", "inline": True},
                 ]
-                send_discord_webhook(
-                    DISCORD_WEBHOOK,
+                send_discord_bot_notification(
                     title=f"Deployment Succeeded (`{short_hash}`)",
                     description=f"**New version deployed**\n\n> 📝 *\"{latest_msg}\"*",
                     color=0x34A853,
@@ -380,9 +523,10 @@ class AutoBuilder:
             logger.error(f"❌ Build failed in {build_duration}s!")
             error_tail = "\n".join(build_res.stderr.splitlines()[-12:] if build_res.stderr else build_res.stdout.splitlines()[-12:])
 
-            if DISCORD_WEBHOOK:
-                send_discord_webhook(
-                    DISCORD_WEBHOOK,
+            if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
+                SERVER_INSTANCE.bot.dispatch("build_completed", False, build_duration, short_hash, author, latest_msg, 0.0, error_tail)
+            elif DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID:
+                send_discord_bot_notification(
                     title=f"❌ Build Failed for `{short_hash}`",
                     description=f"**Compilation error encountered after {build_duration}s:**\n```\n{error_tail[:1000]}\n```",
                     color=0xEA4335,
@@ -492,17 +636,8 @@ async def send_ws_json(writer: asyncio.StreamWriter, data: dict):
 
 
 # ==============================================================================
-# HTTP Authentication & Request Handling
+# Connection & Request Handling
 # ==============================================================================
-
-def is_authenticated(headers: dict) -> bool:
-    cookie_str = headers.get("cookie", "")
-    for cookie in cookie_str.split(";"):
-        if "=" in cookie:
-            k, v = cookie.strip().split("=", 1)
-            if k == "noemt_session" and v in active_sessions:
-                return True
-    return False
 
 
 async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -584,35 +719,88 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         return
 
     # 4. Mod Payload JAR Downloads (Requested by loaders on game startup)
-    if clean_path in ("/loaders/noemtaddons-legit.jar", "/download/legit", "/download/noemtaddons-legit.jar"):
-        serve_jar_file(writer, "legit", headers, client_ip)
+    if clean_path in ("/loaders/noemtaddons.jar", "/download/mod", "/download/noemtaddons.jar",
+                      "/loaders/noemtaddons-cheat.jar", "/download/cheat", "/download/noemtaddons-cheat.jar"):
+        serve_jar_file(writer, "mod", headers, client_ip)
         return
 
-    if clean_path in ("/loaders/noemtaddons-cheat.jar", "/download/cheat", "/download/noemtaddons-cheat.jar"):
-        serve_jar_file(writer, "cheat", headers, client_ip)
+    # 5. Bootstrap Loader JAR Downloads (The bootstrap loader given to users)
+    if clean_path in ("/download/loader", "/download/loaders/cheat", "/download/noemtaddons-loader.jar",
+                      "/loaders/noemtaddons-loader.jar", "/loaders/cheat-loader.jar"):
+        serve_loader_stub_file(writer, "loader", headers, client_ip)
         return
 
-    # 5. Bootstrap Loader JAR Downloads (The 7KB files given to users to put in .minecraft/mods)
-    if clean_path in ("/download/loaders/legit", "/loaders/noemtaddons-legit-loader.jar", "/loaders/legit-loader.jar"):
-        serve_loader_stub_file(writer, "legit", headers, client_ip)
-        return
+    # 6. Initial Registration (First-time setup - strictly single-use ever)
+    if clean_path == "/register":
+        if has_admin_user():
+            if method == "POST":
+                send_http_response(writer, 403, "application/json", b'{"error":"Registration is permanently locked. An admin account already exists."}')
+            else:
+                headers_out = ["HTTP/1.1 302 Found", "Location: /login", "Connection: close", "\r\n"]
+                writer.write("\r\n".join(headers_out).encode("utf-8"))
+                writer.close()
+            return
 
-    if clean_path in ("/download/loaders/cheat", "/loaders/noemtaddons-cheat-loader.jar", "/loaders/cheat-loader.jar"):
-        serve_loader_stub_file(writer, "cheat", headers, client_ip)
-        return
+        if method == "POST":
+            content_len = int(headers.get("content-length", 0))
+            body = (await reader.readexactly(content_len)).decode("utf-8", errors="ignore") if content_len > 0 else ""
+            form_data = urllib.parse.parse_qs(body)
+            username = form_data.get("username", [""])[0].strip()
+            password = form_data.get("password", [""])[0].strip()
+            confirm = form_data.get("confirm_password", [""])[0].strip()
 
-    # 6. Login POST Request
+            if password != confirm:
+                html = render_register_page(error="Passwords do not match. Please re-enter.")
+                send_http_response(writer, 400, "text/html; charset=utf-8", html.encode("utf-8"))
+                return
+
+            ok, err_msg = register_admin(username, password)
+            if not ok:
+                html = render_register_page(error=err_msg)
+                send_http_response(writer, 400, "text/html; charset=utf-8", html.encode("utf-8"))
+                return
+
+            session_token = create_session(username)
+            logger.info(f"🎉 Initial Operator account successfully created: '{username}' from {client_ip}")
+            headers_out = [
+                "HTTP/1.1 302 Found",
+                "Location: /",
+                f"Set-Cookie: noemt_session={session_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
+                "Connection: close",
+                "\r\n"
+            ]
+            writer.write("\r\n".join(headers_out).encode("utf-8"))
+            writer.close()
+            return
+        else:
+            html = render_register_page()
+            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
+            return
+
+    # If no admin account exists yet, automatically route any UI request to /register
+    if not has_admin_user() and clean_path in ("/", "/dashboard", "/login"):
+        if method == "GET":
+            html = render_register_page()
+            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
+            return
+
+    # 7. Login POST Request
     if method == "POST" and clean_path == "/login":
+        if not has_admin_user():
+            headers_out = ["HTTP/1.1 302 Found", "Location: /register", "Connection: close", "\r\n"]
+            writer.write("\r\n".join(headers_out).encode("utf-8"))
+            writer.close()
+            return
+
         content_len = int(headers.get("content-length", 0))
         body = (await reader.readexactly(content_len)).decode("utf-8", errors="ignore") if content_len > 0 else ""
         form_data = urllib.parse.parse_qs(body)
         username = form_data.get("username", [""])[0].strip()
         password = form_data.get("password", [""])[0].strip()
 
-        if username == ADMIN_USER and password == ADMIN_PASSWORD:
-            session_token = hashlib.sha256(f"{username}:{password}".encode()).hexdigest()
-            active_sessions.add(session_token)
-            logger.info(f"🔑 Successful Google Cloud console login from {client_ip}")
+        if verify_login(username, password):
+            session_token = create_session(username)
+            logger.info(f"🔑 Successful Google Cloud console login for '{username}' from {client_ip}")
             headers_out = [
                 "HTTP/1.1 302 Found",
                 "Location: /",
@@ -625,12 +813,13 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
             return
         else:
             logger.warning(f"🚫 Failed login attempt from {client_ip} (user: '{username}')")
-            html = render_login_page(error="Invalid credentials. Verify your Operator ID and Key.")
+            html = render_login_page(error="Invalid credentials. Verify your Operator ID and Password.")
             send_http_response(writer, 401, "text/html; charset=utf-8", html.encode("utf-8"))
             return
 
-    # 7. Logout GET
+    # 8. Logout GET
     if clean_path == "/logout":
+        destroy_session(headers)
         headers_out = [
             "HTTP/1.1 302 Found",
             "Location: /login",
@@ -642,9 +831,10 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         writer.close()
         return
 
-    # 8. Authenticated Dashboard Remote Action POST
+    # 9. Authenticated Dashboard Remote Action POST
     if method == "POST" and clean_path == "/api/action":
-        if not is_authenticated(headers):
+        current_user = get_authenticated_user(headers)
+        if not current_user:
             send_http_response(writer, 401, "application/json", b'{"error":"Unauthorized"}')
             return
         content_len = int(headers.get("content-length", 0))
@@ -655,7 +845,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         text = form_data.get("text", [""])[0]
 
         if action == "build":
-            asyncio.create_task(AutoBuilder.run_build(trigger_source=f"Cloud Console ({ADMIN_USER})"))
+            asyncio.create_task(AutoBuilder.run_build(trigger_source=f"Cloud Console ({current_user})"))
         elif action in ("kill", "shutdown", "close_game"):
             logger.warning(f"🛑 Remote failsafe triggered: Closing Minecraft for target '{target}'")
             await send_to_target(target, {"type": "SHUTDOWN", "reason": "Remote operator failsafe"})
@@ -671,17 +861,31 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         writer.close()
         return
 
-    # 9. Dashboard GET Route (Protected)
+    # 10. Dashboard GET Route (Protected)
     if clean_path in ("/", "/dashboard"):
-        if not is_authenticated(headers):
+        if not has_admin_user():
+            html = render_register_page()
+            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
+            return
+        current_user = get_authenticated_user(headers)
+        if not current_user:
             html = render_login_page()
             send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
             return
-        html = render_dashboard_page()
+        html = render_dashboard_page(current_user=current_user)
         send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
         return
 
     if clean_path == "/login":
+        if not has_admin_user():
+            html = render_register_page()
+            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
+            return
+        if is_authenticated(headers):
+            headers_out = ["HTTP/1.1 302 Found", "Location: /", "Connection: close", "\r\n"]
+            writer.write("\r\n".join(headers_out).encode("utf-8"))
+            writer.close()
+            return
         html = render_login_page()
         send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
         return
@@ -810,6 +1014,191 @@ def send_http_response(writer: asyncio.StreamWriter, status_code: int, content_t
 # ==============================================================================
 # Google Cloud / Material Design 3 UI Renderers
 # ==============================================================================
+
+def render_register_page(error: Optional[str] = None) -> str:
+    error_html = f'<div class="google-alert-error"><span>⚠️</span> {error}</div>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Initial Setup - Noemt Cloud Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --google-blue: #8ab4f8;
+            --google-blue-hover: #aecbfa;
+            --google-bg: #131314;
+            --google-surface: #1e1f20;
+            --google-surface-variant: #28292a;
+            --google-border: #444746;
+            --google-text: #e3e3e3;
+            --google-text-secondary: #c4c7c5;
+            --google-red: #f28b82;
+            --google-green: #81c995;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            background: var(--google-bg);
+            color: var(--google-text);
+            font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }}
+        .google-card {{
+            width: 100%;
+            max-width: 460px;
+            background: var(--google-surface);
+            border: 1px solid var(--google-border);
+            border-radius: 28px;
+            padding: 40px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+        }}
+        .google-logo-row {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }}
+        .google-logo {{
+            width: 32px;
+            height: 32px;
+        }}
+        .google-title {{
+            font-size: 24px;
+            font-weight: 400;
+            color: var(--google-text);
+            margin-bottom: 8px;
+        }}
+        .google-subtitle {{
+            font-size: 14px;
+            color: var(--google-text-secondary);
+            margin-bottom: 20px;
+        }}
+        .setup-notice {{
+            background: rgba(138, 180, 248, 0.08);
+            border: 1px solid rgba(138, 180, 248, 0.25);
+            color: var(--google-blue);
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }}
+        .google-alert-error {{
+            background: rgba(242, 139, 130, 0.12);
+            border: 1px solid rgba(242, 139, 130, 0.3);
+            color: var(--google-red);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .form-group {{
+            margin-bottom: 18px;
+        }}
+        .input-label {{
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--google-text-secondary);
+            margin-bottom: 6px;
+        }}
+        .google-input {{
+            width: 100%;
+            background: var(--google-bg);
+            border: 1px solid var(--google-border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            color: var(--google-text);
+            font-size: 14px;
+            font-family: 'Roboto', sans-serif;
+            transition: all 0.2s ease;
+        }}
+        .google-input:focus {{
+            outline: none;
+            border-color: var(--google-blue);
+            box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+        }}
+        .google-btn {{
+            width: 100%;
+            background: var(--google-blue);
+            color: #040c17;
+            border: none;
+            border-radius: 20px;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: 'Google Sans', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 12px;
+        }}
+        .google-btn:hover {{
+            background: var(--google-blue-hover);
+        }}
+        .google-footer-text {{
+            margin-top: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--google-text-secondary);
+        }}
+    </style>
+</head>
+<body>
+    <div class="google-card">
+        <div class="google-logo-row">
+            <svg class="google-logo" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            <span style="font-weight: 500; font-size: 18px; letter-spacing: -0.2px;">Noemt Cloud</span>
+        </div>
+        <h1 class="google-title">Initial Setup</h1>
+        <p class="google-subtitle">Create your Operator Account (One-Time Setup)</p>
+        
+        <div class="setup-notice">
+            <span>🛡️</span>
+            <div><strong>First-Time Setup:</strong> Registration will be permanently locked after you create this account. Credentials will be securely hashed with PBKDF2 in SQLite.</div>
+        </div>
+
+        {error_html}
+
+        <form method="POST" action="/register">
+            <div class="form-group">
+                <label class="input-label">Operator Username</label>
+                <input type="text" name="username" class="google-input" placeholder="e.g. nom" minlength="3" required autofocus>
+            </div>
+            <div class="form-group">
+                <label class="input-label">Master Password</label>
+                <input type="password" name="password" class="google-input" placeholder="Min. 6 characters" minlength="6" required>
+            </div>
+            <div class="form-group">
+                <label class="input-label">Confirm Password</label>
+                <input type="password" name="confirm_password" class="google-input" placeholder="Re-enter password" minlength="6" required>
+            </div>
+            <button type="submit" class="google-btn">Create Account & Enter Console →</button>
+        </form>
+        <div class="google-footer-text">
+            Protected by Noemt Cloud SQLite Identity Storage
+        </div>
+    </div>
+</body>
+</html>"""
+
 
 def render_login_page(error: Optional[str] = None) -> str:
     error_html = f'<div class="google-alert-error"><span>⚠️</span> {error}</div>' if error else ""
@@ -955,13 +1344,13 @@ def render_login_page(error: Optional[str] = None) -> str:
         <form method="POST" action="/login">
             <div class="form-group">
                 <label class="input-label">Operator ID</label>
-                <input type="text" name="username" class="google-input" value="nom" required autofocus>
+                <input type="text" name="username" class="google-input" placeholder="Operator username" required autofocus>
             </div>
             <div class="form-group">
-                <label class="input-label">Security Key</label>
-                <input type="password" name="password" class="google-input" placeholder="Enter key from server logs" required>
+                <label class="input-label">Password</label>
+                <input type="password" name="password" class="google-input" placeholder="Operator password" required>
             </div>
-            <button type="submit" class="google-btn">Continue to Console →</button>
+            <button type="submit" class="google-btn">Sign in to Console →</button>
         </form>
         <div class="google-footer-text">
             Protected by Noemt Cloud Identity Services
@@ -971,7 +1360,7 @@ def render_login_page(error: Optional[str] = None) -> str:
 </html>"""
 
 
-def render_dashboard_page() -> str:
+def render_dashboard_page(current_user: str = "nom") -> str:
     meta = compute_version_metadata()
     connected_count = len(clients)
     short_hash, author, msg = AutoBuilder.get_latest_commit_details()
@@ -1440,7 +1829,7 @@ def render_dashboard_page() -> str:
         </div>
         <div class="bar-right">
             <a href="/logout" class="google-btn-secondary" style="padding:5px 12px; font-size:12px;">Sign Out</a>
-            <div class="user-avatar" title="Logged in as nom">N</div>
+            <div class="user-avatar" title="Logged in as {current_user}">{current_user[:1].upper()}</div>
         </div>
     </div>
 
@@ -1449,7 +1838,7 @@ def render_dashboard_page() -> str:
         <div class="page-header">
             <div class="page-title">
                 <h1>Mod Telemetry & Instance Management</h1>
-                <p>Project: <b>noemtaddons-prod</b> • Region: <b>global</b> • Operator: <b>nom</b> • Mode: <b>Event-Driven CI/CD</b></p>
+                <p>Project: <b>noemtaddons-prod</b> • Region: <b>global</b> • Operator: <b>{current_user}</b> • Mode: <b>Event-Driven CI/CD</b></p>
             </div>
             <div class="action-row">
                 <form method="POST" action="/api/action" style="display:inline;">
@@ -1525,33 +1914,33 @@ def render_dashboard_page() -> str:
                     <table>
                         <thead>
                             <tr>
-                                <th>Build Flavor</th>
-                                <th>Payload Endpoint</th>
+                                <th>Component</th>
+                                <th>Download Endpoint</th>
                                 <th>Size</th>
                                 <th>Checksum</th>
-                                <th>Bootstrap Loader</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td><span class="status-pill status-healthy">LEGIT</span></td>
+                                <td><span class="status-pill status-healthy">MOD PAYLOAD</span></td>
                                 <td>
-                                    <code>/loaders/noemtaddons-legit.jar</code>
-                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons-legit.jar')">Copy</button>
+                                    <code>/loaders/noemtaddons.jar</code>
+                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons.jar')">Copy</button>
                                 </td>
-                                <td>{meta['endpoints']['legit']['size'] / 1024:.1f} KB</td>
-                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['legit']['sha256'][:14]}...</small></td>
-                                <td><a href="/download/loaders/legit" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
+                                <td>{meta['endpoints']['mod']['size'] / 1024:.1f} KB</td>
+                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['mod']['sha256'][:14]}...</small></td>
+                                <td><a href="/download/mod" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
                             </tr>
                             <tr>
-                                <td><span class="status-pill" style="background:rgba(242,139,130,0.15); color:var(--google-red);">CHEAT</span></td>
+                                <td><span class="status-pill" style="background:rgba(138,180,248,0.15); color:var(--google-blue);">BOOTSTRAP LOADER</span></td>
                                 <td>
-                                    <code>/loaders/noemtaddons-cheat.jar</code>
-                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons-cheat.jar')">Copy</button>
+                                    <code>/download/loader</code>
+                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/download/loader')">Copy</button>
                                 </td>
-                                <td>{meta['endpoints']['cheat']['size'] / 1024:.1f} KB</td>
-                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['cheat']['sha256'][:14]}...</small></td>
-                                <td><a href="/download/loaders/cheat" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
+                                <td>{meta['endpoints']['loader']['size'] / 1024:.1f} KB</td>
+                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['loader']['sha256'][:14]}...</small></td>
+                                <td><a href="/download/loader" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
                             </tr>
                         </tbody>
                     </table>
@@ -1705,6 +2094,9 @@ async def handle_ws_session(reader: asyncio.StreamReader, writer: asyncio.Stream
                     ws_to_player[writer] = player_name
                     logger.info(f"✅ Player '{player_name}' connected (UUID: {player_uuid}, Mod v{version})")
 
+                    if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
+                        SERVER_INSTANCE.bot.dispatch("player_join", player_name, clients[player_name])
+
                     await send_ws_json(writer, {
                         "type": "HANDSHAKE_ACK",
                         "message": f"Connected to Noemt Cloud Server as '{player_name}'",
@@ -1731,6 +2123,8 @@ async def handle_ws_session(reader: asyncio.StreamReader, writer: asyncio.Stream
     finally:
         if player_name and player_name in clients:
             del clients[player_name]
+            if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
+                SERVER_INSTANCE.bot.dispatch("player_leave", player_name)
         if writer in ws_to_player:
             del ws_to_player[writer]
         logger.info(f"❌ Connection closed for {player_name or client_ip}")
@@ -1810,8 +2204,11 @@ Available Commands:
                 n = await send_to_target(target, {"type": "SHUTDOWN", "reason": "CLI remote shutdown"})
                 print(f"Sent emergency shutdown signal to {n} client(s).")
 
-            elif cmd in ("creds", "pass", "login"):
-                print(f"\n🔐 Cloud Console Credentials:\n  Username: {ADMIN_USER}\n  Password: {ADMIN_PASSWORD}\n")
+            elif cmd in ("creds", "pass", "login", "user"):
+                if has_admin_user():
+                    print(f"\n🔐 Cloud Console Admin: '{get_admin_username()}' (Configured in SQLite database server.db)\n")
+                else:
+                    print("\n⚠️ Initial setup required: Open http://<host>:<port>/ in your browser to register the master operator account.\n")
 
             elif cmd == "list":
                 if not clients:
@@ -1893,7 +2290,70 @@ Available Commands:
 
 
 # ==============================================================================
-# Server Main Entrypoint
+# Server Application Class & Factory
+# ==============================================================================
+
+class ServerApp:
+    def __init__(self):
+        self.bot = None
+        self.port = 8765
+        self.host = "0.0.0.0"
+        self.clients = clients
+        self.ws_to_player = ws_to_player
+        self.AutoBuilder = AutoBuilder
+        self.send_to_target = send_to_target
+        self.compute_version_metadata = compute_version_metadata
+
+    @property
+    def IS_BUILDING(self):
+        return IS_BUILDING
+
+    @property
+    def LAST_BUILD_STATUS(self):
+        return LAST_BUILD_STATUS
+
+    @property
+    def LAST_BUILD_TIME(self):
+        return LAST_BUILD_TIME
+
+    @property
+    def LAST_BUILD_OUTPUT(self):
+        return LAST_BUILD_OUTPUT
+
+    @property
+    def GIT_BRANCH(self):
+        return GIT_BRANCH
+
+    async def run_task(self, host: str = "0.0.0.0", port: int = 8765):
+        self.host = host
+        self.port = port
+        init_db()
+
+        print("\n" + "=" * 65)
+        print(" 🔒 NOEMT CLOUD CONTROL PLANE & DISCORD BOT")
+        print(f"    Web Dashboard: http://{host}:{port}/")
+        if has_admin_user():
+            print(f"    Operator:      {get_admin_username()} (Protected)")
+        else:
+            print("    Status:        Initial Setup Required (Open URL in browser to register)")
+        print("=" * 65 + "\n")
+
+        logger.info(f"Starting Noemt Cloud Control Server on http://{host}:{port}")
+        server = await asyncio.start_server(handle_connection, host, port)
+        async with server:
+            await server.serve_forever()
+
+
+SERVER_INSTANCE = ServerApp()
+
+
+def create_server() -> ServerApp:
+    init_db()
+    return SERVER_INSTANCE
+
+
+# ==============================================================================
+# Server Main Entrypoint (Standalone CLI runner)
 # ==============================================================================
 
 async def main():
@@ -1901,15 +2361,12 @@ async def main():
     parser.add_argument("--host", default="0.0.0.0", help="Host address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
     parser.add_argument("--repo-dir", default=None, help="Root repository directory (default: parent of server/)")
-    parser.add_argument("--jars-dir", default=None, help="Compiled JARs directory (default: build/libs/)")
-    parser.add_argument("--branch", default="master", help="Git branch to track (default: master)")
-    parser.add_argument("--poll-interval", type=int, default=60, help="Seconds between git pull checks (default: 60)")
-    parser.add_argument("--discord-webhook", default=None, help="Discord Webhook URL for build notifications")
-    parser.add_argument("--admin-pass", default=None, help="Custom admin password for dashboard")
+    parser.add_argument("--discord-token", default=None, help="Discord Bot Token for build notifications")
+    parser.add_argument("--discord-channel", default=None, help="Discord Channel ID for build notifications")
     parser.add_argument("--secret", default=None, help="Optional client authentication secret key")
     args = parser.parse_args()
 
-    global AUTH_SECRET, REPO_DIR, JARS_DIR, GIT_BRANCH, POLL_INTERVAL, DISCORD_WEBHOOK
+    global AUTH_SECRET, REPO_DIR, JARS_DIR, GIT_BRANCH, POLL_INTERVAL, DISCORD_BOT_TOKEN, DISCORD_CHANNEL_ID
     AUTH_SECRET = args.secret
     if args.repo_dir:
         REPO_DIR = Path(args.repo_dir)
@@ -1919,16 +2376,20 @@ async def main():
         JARS_DIR = REPO_DIR / "build" / "libs"
     GIT_BRANCH = args.branch
     POLL_INTERVAL = args.poll_interval
-    if args.discord_webhook:
-        DISCORD_WEBHOOK = args.discord_webhook
+    if args.discord_token:
+        DISCORD_BOT_TOKEN = args.discord_token
+    if args.discord_channel:
+        DISCORD_CHANNEL_ID = args.discord_channel
 
-    init_auth(args.admin_pass)
+    init_db()
 
     print("\n" + "=" * 65)
-    print(" 🔒 NOEMT CLOUD CONSOLE CREDENTIALS")
+    print(" 🔒 NOEMT CLOUD CONSOLE")
     print(f"    URL:      http://{args.host}:{args.port}/")
-    print(f"    Username: {ADMIN_USER}")
-    print(f"    Password: {ADMIN_PASSWORD}")
+    if has_admin_user():
+        print(f"    Operator: {get_admin_username()} (Protected)")
+    else:
+        print("    Status:   Initial Setup Required (Open URL in browser to register)")
     print("=" * 65 + "\n")
 
     logger.info(f"Starting Noemt Cloud Server on http://{args.host}:{args.port}")

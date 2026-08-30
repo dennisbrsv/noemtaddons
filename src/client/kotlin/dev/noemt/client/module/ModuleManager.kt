@@ -34,20 +34,13 @@ object ModuleManager {
         register(RemoteWebSocketClient)
         register(LoadoutModule)
 
-        // Initialize modules based on build type
+        // Initialize all modules
         for (module in modules) {
-            if (module.type == ModuleType.CHEAT && BuildConstants.isLegitBuild) {
-                // Cheat module is omitted in legit build
-                continue
-            }
             module.init()
         }
     }
 
-    fun isModuleAvailable(module: Module): Boolean {
-        if (module.type == ModuleType.CHEAT && BuildConstants.isLegitBuild) return false
-        return true
-    }
+    fun isModuleAvailable(module: Module): Boolean = true
 
     fun isModuleAvailable(id: String): Boolean {
         val mod = modules.find { it.id.equals(id, ignoreCase = true) } ?: return false

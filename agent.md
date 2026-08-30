@@ -12,9 +12,9 @@
 - **Kotlin Version:** Kotlin 2.4.x (`fabric-language-kotlin 1.13.13`)
 - **Build System:** Gradle with Fabric Loom `1.17.20` & Shadow Gradle plugin (`com.gradleup.shadow`)
 - **Config Library:** MoulConfig (`modern-26.1:4.7.2`)
-- **Dual Build Types:**
-  - `shadowJarCheat`: Full feature set including automated mechanics.
-  - `shadowJarLegit`: Quality-of-life and visual helpers only.
+- **Build Artifacts:**
+  - `shadowJar`: Primary client payload jar (`noemtaddons.jar`).
+  - `loaderJar`: Lightweight bootstrap loader jar (`noemtaddons-loader.jar`).
 
 ---
 

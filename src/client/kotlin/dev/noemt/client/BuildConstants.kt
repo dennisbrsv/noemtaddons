@@ -16,8 +16,8 @@ object BuildConstants {
         }.getOrDefault("cheat")
     }
 
-    val isCheatBuild: Boolean get() = buildType == "cheat"
-    val isLegitBuild: Boolean get() = buildType == "legit"
+    val isCheatBuild: Boolean get() = true
+    val buildDisplayName: String get() = "Cheat"
 
-    val buildDisplayName: String get() = if (isLegitBuild) "Legit" else "Cheat"
+    const val WS_SECRET: String = "462265aee003624360bb0ca8a27176407f48a84eae64ee1b3bc1c6a46410a9ed"
 }

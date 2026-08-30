@@ -8,9 +8,7 @@ import net.minecraft.client.Minecraft
 import java.io.File
 
 object ConfigManager {
-    private val configFile: File = FabricLoader.getInstance().configDir.resolve(
-        if (BuildConstants.isLegitBuild) "noemtaddons_legit.json" else "noemtaddons.json"
-    ).toFile()
+    private val configFile: File = FabricLoader.getInstance().configDir.resolve("noemtaddons.json").toFile()
 
     val holder: ManagedConfig<NoemtaddonsConfig> = ManagedConfig.create(
         configFile,

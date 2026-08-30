@@ -1,19 +1,24 @@
-# NoemtAddons Remote Control Server & WebSocket Guide
+# NoemtAddons Integrated Control Plane & Discord Bot
 
-This directory contains the Python WebSocket server for communicating with and controlling the **NoemtAddons** Minecraft client mod remotely.
+This directory contains the unified Python WebSocket/HTTP server, CI/CD auto-builder, and Discord Bot for controlling **NoemtAddons** remotely on a shared asyncio event loop.
 
 ---
 
 ## 1. Quick Start
 
-### Install Dependencies
+### Install Dependencies (Optional for Discord Bot features)
 ```bash
-pip install websockets
+pip install discord.py python-dotenv
 ```
 
-### Run Locally
+### Run Unified Server & Discord Bot
 ```bash
-python3 server/server.py --port 8765
+python3 server/main.py --port 8765
+```
+
+### Run with PM2
+```bash
+pm2 start ecosystem.config.js
 ```
 
 ---

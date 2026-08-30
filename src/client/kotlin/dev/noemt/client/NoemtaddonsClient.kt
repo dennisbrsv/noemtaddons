@@ -45,12 +45,9 @@ object NoemtaddonsClient : ClientModInitializer {
                         .then(
                             ClientCommands.literal("modules")
                                 .executes {
-                                    ChatUtils.modMessage("&6=== NoemtAddons Modules (&b${BuildConstants.buildDisplayName} Build&6) ===")
+                                    ChatUtils.modMessage("&6=== NoemtAddons Modules ===")
                                     for (mod in ModuleManager.modules) {
-                                        val isAvail = ModuleManager.isModuleAvailable(mod)
-                                        val typeTag = if (mod.type == ModuleType.CHEAT) "&c[CHEAT]" else "&a[LEGIT]"
-                                        val statusTag = if (isAvail) "&aActive" else "&8Omitted (Legit build)"
-                                        ChatUtils.modMessage(" &7- &f${mod.name} $typeTag: $statusTag")
+                                        ChatUtils.modMessage(" &7- &f${mod.name} &7(&b${mod.id}&7): &aActive")
                                     }
                                     1
                                 }
@@ -58,12 +55,9 @@ object NoemtaddonsClient : ClientModInitializer {
                         .then(
                             ClientCommands.literal("list")
                                 .executes {
-                                    ChatUtils.modMessage("&6=== NoemtAddons Modules (&b${BuildConstants.buildDisplayName} Build&6) ===")
+                                    ChatUtils.modMessage("&6=== NoemtAddons Modules ===")
                                     for (mod in ModuleManager.modules) {
-                                        val isAvail = ModuleManager.isModuleAvailable(mod)
-                                        val typeTag = if (mod.type == ModuleType.CHEAT) "&c[CHEAT]" else "&a[LEGIT]"
-                                        val statusTag = if (isAvail) "&aActive" else "&8Omitted (Legit build)"
-                                        ChatUtils.modMessage(" &7- &f${mod.name} $typeTag: $statusTag")
+                                        ChatUtils.modMessage(" &7- &f${mod.name} &7(&b${mod.id}&7): &aActive")
                                     }
                                     1
                                 }

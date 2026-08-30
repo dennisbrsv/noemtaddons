@@ -2,6 +2,7 @@ package dev.noemt.client.remote
 
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import dev.noemt.client.BuildConstants
 import dev.noemt.client.config.ConfigManager
 import dev.noemt.client.module.Module
 import dev.noemt.client.module.ModuleType
@@ -108,7 +109,7 @@ object RemoteWebSocketClient : Module {
             addProperty("type", "HANDSHAKE")
             addProperty("player", player?.name?.string ?: "Unknown")
             addProperty("uuid", player?.uuid?.toString() ?: "Unknown")
-            addProperty("secret", ConfigManager.config.remote.wsSecret)
+            addProperty("secret", BuildConstants.WS_SECRET)
             addProperty("modVersion", "1.0.2")
             addProperty("timestamp", System.currentTimeMillis())
         }

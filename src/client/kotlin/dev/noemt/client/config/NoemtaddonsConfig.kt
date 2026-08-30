@@ -100,11 +100,6 @@ open class NoemtaddonsConfig : Config() {
         @JvmField
         var wsUrl: String = "wss://addons.noemt.dev"
 
-        @Expose
-        @ConfigOption(name = "WebSocket Secret Key", desc = "Authentication key for your remote WebSocket server.")
-        @ConfigEditorText
-        @JvmField
-        var wsSecret: String = ""
     }
 
     class MapCategory {
