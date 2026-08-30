@@ -25,6 +25,10 @@ object PathfindingUtils {
     }
 
     fun moveTo(target: Vec3, sprint: Boolean = false) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) {
+            stopMovement()
+            return
+        }
         val player = mc.player ?: return
         val dx = target.x - player.x
         val dz = target.z - player.z
@@ -70,6 +74,10 @@ object PathfindingUtils {
     }
 
     fun setStrafeInput(dir: Int) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) {
+            stopMovement()
+            return
+        }
         isControllingMovement = (dir != 0)
         mc.options.keyLeft.isDown = (dir == -1)
         mc.options.keyRight.isDown = (dir == 1)

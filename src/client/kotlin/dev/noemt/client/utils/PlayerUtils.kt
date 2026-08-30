@@ -32,6 +32,7 @@ object PlayerUtils {
     }
 
     fun leftClick() {
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) return
         val key = mc.options.keyAttack
         key.isDown = true
         (key as? IKeyMapping)?.let { it.clickCount = it.clickCount + 1 }
@@ -39,6 +40,7 @@ object PlayerUtils {
     }
 
     fun rightClick() {
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) return
         val key = mc.options.keyUse
         key.isDown = true
         (key as? IKeyMapping)?.let { it.clickCount = it.clickCount + 1 }
@@ -46,6 +48,7 @@ object PlayerUtils {
     }
 
     fun swingArm() {
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) return
         val player = mc.player ?: return
         if (!player.swinging || player.swingTime < 0) {
             player.swingingArm = InteractionHand.MAIN_HAND
@@ -59,6 +62,7 @@ object PlayerUtils {
     }
 
     fun attackEntity(entity: net.minecraft.world.entity.Entity? = null) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) return
         val player = mc.player ?: return
         if (entity != null && player.distanceTo(entity) <= 5.5) {
             mc.gameMode?.attack(player, entity)

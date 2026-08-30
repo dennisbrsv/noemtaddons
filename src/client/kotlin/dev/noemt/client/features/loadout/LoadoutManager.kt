@@ -12,6 +12,8 @@ import dev.noemt.client.utils.ItemUtils
 import dev.noemt.client.utils.ItemUtils.lore
 import dev.noemt.client.utils.ItemUtils.skyblockId
 import dev.noemt.client.utils.LocationUtils
+import dev.noemt.client.utils.MouseRotationHelper
+import dev.noemt.client.utils.PathfindingUtils
 import dev.noemt.client.utils.PlayerUtils
 import dev.noemt.client.utils.ScoreboardUtils
 import net.minecraft.client.Minecraft
@@ -103,6 +105,7 @@ object LoadoutManager {
     private var pendingAutoClose: Boolean = false
     private var lastManualClick: Long = 0L
     private var lastSwapExecutionMs: Long = 0L
+    private var swapCooldownUntilMs: Long = 0L
 
     // Automated GUI Swap State Machine
     private enum class SwapStage {
@@ -121,6 +124,7 @@ object LoadoutManager {
     private var pendingReason: String = "Manual"
 
     val isExecutingSwap: Boolean get() = currentStage != SwapStage.IDLE
+    val isSwapping: Boolean get() = isExecutingSwap || inLoadoutMenu || System.currentTimeMillis() < swapCooldownUntilMs || mc.screen is AbstractContainerScreen<*>
 
     fun init() {
         loadData()
@@ -581,6 +585,11 @@ object LoadoutManager {
         val preDelay = Random.nextLong(130, 175)
         stageTargetTimeMs = System.currentTimeMillis() + preDelay
         currentStage = SwapStage.PRE_CMD_WAIT
+
+        // Immediately halt and suppress all automated movement, aiming, and interactions
+        PathfindingUtils.stopMovement()
+        MouseRotationHelper.clearTarget()
+        MouseRotationHelper.isSuppressed = true
     }
 
     fun onTick() {
@@ -939,6 +948,8 @@ object LoadoutManager {
         currentStage = SwapStage.IDLE
         pendingLoadout = null
         stageTargetTimeMs = 0L
+        swapCooldownUntilMs = System.currentTimeMillis() + 150L
+        MouseRotationHelper.isSuppressed = false
     }
 
     fun requestSkyblockSync() {

@@ -195,7 +195,7 @@ def send_discord_webhook(webhook_url: str, title: str, description: str, color: 
 
     payload = {
         "username": "pragmatic play",
-        "avatar_url": "https://play.google.com/store/apps/details?id=com.pragmaticplay.verification&hl=gsw",
+        "avatar_url": "https://play-lh.googleusercontent.com/Hzs48fm7C1x3qZA8BBDV1JqP5fg49HyQ34gyGlodnkK2uv8pbchsTL4WIlAr_N290ekjiJHyIhVUuxmj-6Y1IQ",
         "embeds": [
             {
                 "title": title,
@@ -205,7 +205,7 @@ def send_discord_webhook(webhook_url: str, title: str, description: str, color: 
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "footer": {
                     "text": footer,
-                    "icon_url": "https://play.google.com/store/apps/details?id=com.pragmaticplay.verification&hl=gsw"
+                    "icon_url": "https://play-lh.googleusercontent.com/Hzs48fm7C1x3qZA8BBDV1JqP5fg49HyQ34gyGlodnkK2uv8pbchsTL4WIlAr_N290ekjiJHyIhVUuxmj-6Y1IQ"
                 }
             }
         ]

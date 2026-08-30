@@ -39,6 +39,9 @@ object MouseRotationHelper {
     }
 
     fun setTarget(target: Vec3, speed: Float = 1.0f) {
+        if (isSuppressed || dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) {
+            return
+        }
         val player = mc.player
         val prev = targetVec
         val isNewTarget = prev == null || prev.distanceToSqr(target) > 0.8
@@ -89,7 +92,10 @@ object MouseRotationHelper {
         val dt = ((now - lastUpdateTime) / 1_000_000_000.0).coerceIn(0.001, 0.05)
         lastUpdateTime = now
 
-        if (isSuppressed) return
+        if (isSuppressed || dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) {
+            clearTarget()
+            return
+        }
 
         updateRotation(dt)
     }

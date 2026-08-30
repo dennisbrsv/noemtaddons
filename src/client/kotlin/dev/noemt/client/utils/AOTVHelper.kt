@@ -63,7 +63,7 @@ object AOTVHelper {
     }
 
     fun castTeleport(restoreSlot: Int? = null, onFinish: (() -> Unit)? = null): Boolean {
-        if (isTeleporting) return false
+        if (isTeleporting || dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) return false
         val slot = findAotvHotbarSlot() ?: return false
         val player = mc.player ?: return false
         val prevSlot = restoreSlot ?: player.inventory.selectedSlot

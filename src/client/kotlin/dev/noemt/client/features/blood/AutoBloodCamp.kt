@@ -198,6 +198,13 @@ object AutoBloodCamp : Module {
                 return@register
             }
 
+            // If a loadout swap is active or screen is open, pause all AutoBloodCamp actions
+            if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) {
+                if (PathfindingUtils.isControllingMovement) PathfindingUtils.stopMovement()
+                MouseRotationHelper.clearTarget()
+                return@register
+            }
+
             // If a teleport is currently happening or within the pause window, pause actions
             if (AOTVHelper.isTeleporting || teleportPauseTicks > 0) {
                 if (PathfindingUtils.isControllingMovement) PathfindingUtils.stopMovement()
@@ -631,6 +638,11 @@ object AutoBloodCamp : Module {
     private fun tryAttack(entity: LivingEntity?) {
         val player = mc.player ?: return
         val config = ConfigManager.config.blood
+
+        // If a loadout swap is active or screen is open, DO NOT attack or swing
+        if (dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) {
+            return
+        }
 
         // STRICT WATCHER & WATCHFUL EYE PROTECTION: Never attack or swing at the Watcher or Watchful Eyes
         if (entity != null && isWatcherOrEye(entity)) {
