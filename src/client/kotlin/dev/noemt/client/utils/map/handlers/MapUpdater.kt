@@ -152,7 +152,7 @@ object MapUpdater {
                         if (id == 0 || id == 166) room.opened = true
                     } else if (mapTile is DoorTile && mapTile.state == RoomState.DISCOVERED) {
                         if (room.type == DoorType.BLOOD) {
-                            val bloodRoomTile = DungeonScanner.dungeonList.filterIsInstance<RoomTile>().find { it.data.type == RoomType.BLOOD }
+                            val bloodRoomTile = DungeonScanner.dungeonList.find { it is RoomTile && it.data.type == RoomType.BLOOD } as? RoomTile
                             if (bloodRoomTile != null && bloodRoomTile.state != RoomState.UNOPENED) room.opened = true
                         } else room.opened = true
                     }

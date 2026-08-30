@@ -796,17 +796,12 @@ object LoadoutManager {
             val currentRoom = player?.let { dev.noemt.client.utils.map.utils.ScanUtils.currentRoom ?: dev.noemt.client.utils.map.utils.ScanUtils.getRoomFromPos(it.position()) }
             val inGreenRoom = currentRoom?.data?.type == dev.noemt.client.utils.map.core.RoomType.ENTRANCE
 
-            val lines = ScoreboardUtils.getSidebarLines()
-            val isFreshDungeonRun = inGreenRoom || lines.any { line ->
-                line.contains("Cleared: 0%", ignoreCase = true) ||
-                line.contains("Time Elapsed: 00s", ignoreCase = true) ||
-                line.contains("Time Elapsed: 01s", ignoreCase = true) ||
-                line.contains("Time Elapsed: 02s", ignoreCase = true)
-            }
+            val snap = ScoreboardUtils.getSnapshot()
+            val isFreshDungeonRun = inGreenRoom || snap.isFreshDungeonRun
             if (isFreshDungeonRun && !dungeonRunTriggeredThisFloor) {
                 dungeonRunTriggeredThisFloor = true
                 checkConditions(ConditionContext(location = "$areaName DUNGEONS"))
-            } else if (!isFreshDungeonRun && lines.any { it.contains("Cleared:", ignoreCase = true) && !it.contains("Cleared: 0%", ignoreCase = true) }) {
+            } else if (!isFreshDungeonRun && (snap.dungeonClearedPercent != null && snap.dungeonClearedPercent > 0)) {
                 dungeonRunTriggeredThisFloor = true
             }
 

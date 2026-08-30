@@ -168,6 +168,47 @@ object MobMatcher {
         return names
     }
 
+    fun getNametagArmorStands(entity: Entity): List<ArmorStand> {
+        val level = mc.level ?: return emptyList()
+        val checkArea = AABB(
+            entity.x - 1.5, entity.y - 1.0, entity.z - 1.5,
+            entity.x + 1.5, entity.y + 3.5, entity.z + 1.5
+        )
+        return level.getEntities(entity, checkArea).filterIsInstance<ArmorStand>()
+    }
+
+    private val healthRegex = Regex("""([\d,.]+[kKmMbBtT]?)/([\d,.]+[kKmMbBtT]?)[❤|❤]""")
+
+    fun getEntityHealth(entity: Entity): Pair<Double, Double>? {
+        for (name in getAllEntityNames(entity)) {
+            val clean = name.replace("§.", "").trim()
+            val match = healthRegex.find(clean)
+            if (match != null) {
+                val current = parseShortenedNumber(match.groupValues[1]) ?: continue
+                val max = parseShortenedNumber(match.groupValues[2]) ?: continue
+                return current to max
+            }
+        }
+        return null
+    }
+
+    private fun parseShortenedNumber(str: String): Double? {
+        val clean = str.replace(",", "").trim()
+        val multiplier = when (clean.lastOrNull()?.lowercaseChar()) {
+            'k' -> 1_000.0
+            'm' -> 1_000_000.0
+            'b' -> 1_000_000_000.0
+            't' -> 1_000_000_000_000.0
+            else -> 1.0
+        }
+        val numberPart = if (multiplier != 1.0) clean.dropLast(1) else clean
+        return numberPart.toDoubleOrNull()?.let { it * multiplier }
+    }
+
+    fun isMiniboss(entity: Entity): Boolean = matches(entity, MobCategory.MINIBOSS)
+    fun isBoss(entity: Entity): Boolean = matches(entity, MobCategory.BOSS)
+    fun isSlayer(entity: Entity): Boolean = matches(entity, MobCategory.SLAYER)
+
     fun getAimedEntity(maxDistance: Double = 20.0): Entity? {
         val player = mc.player ?: return null
         val level = mc.level ?: return null

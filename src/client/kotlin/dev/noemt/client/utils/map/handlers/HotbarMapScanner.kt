@@ -30,7 +30,7 @@ object HotbarMapScanner {
     }
 
     fun updateMap(mapData: MapItemSavedData) {
-        cachedTiles = Array(121) { null }
+        cachedTiles.fill(null)
 
         for (x in 0..10) for (y in 0..10) {
             val mapX = startX + x * halfTile

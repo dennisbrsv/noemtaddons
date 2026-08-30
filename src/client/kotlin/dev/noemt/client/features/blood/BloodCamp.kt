@@ -149,8 +149,11 @@ object BloodCamp : Module {
                 if (p != null && p.distanceToSqr(entity) > 2000) return@register
             }
 
-            val item = entity.getItemBySlot(EquipmentSlot.HEAD).takeIf { it.`is`(Items.PLAYER_HEAD) } ?: return@register
-            if (ItemUtils.getSkullTexture(item) !in mobSkulls) return@register
+            val isAlreadyTracked = bloodMobs.containsKey(entity)
+            if (!isAlreadyTracked) {
+                val item = entity.getItemBySlot(EquipmentSlot.HEAD).takeIf { it.`is`(Items.PLAYER_HEAD) } ?: return@register
+                if (ItemUtils.getSkullTexture(item) !in mobSkulls) return@register
+            }
 
             val packetVec = Vec3(
                 entity.x + (packet.xa / 4096.0),

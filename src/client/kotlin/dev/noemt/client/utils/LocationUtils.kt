@@ -11,26 +11,18 @@ import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket
 object LocationUtils {
     private val mc: Minecraft get() = Minecraft.getInstance()
 
+    private var cachedOnHypixel: Boolean? = null
     val onHypixel: Boolean
-        get() = mc.player?.connection?.serverBrand()?.lowercase()?.contains("hypixel") == true
+        get() {
+            if (cachedOnHypixel == null) {
+                cachedOnHypixel = mc.player?.connection?.serverBrand()?.lowercase()?.contains("hypixel") == true
+            }
+            return cachedOnHypixel == true
+        }
 
     var inSkyblock: Boolean = false
-
-    val inDungeon: Boolean
-        get() {
-            val area = ScoreboardUtils.getSkyblockArea()
-            if (area != null) {
-                if (area.contains("Dungeon Hub", ignoreCase = true)) return false
-                if (area.contains("Catacombs", ignoreCase = true) || area.contains("The Catacombs", ignoreCase = true)) return true
-            }
-            val lines = ScoreboardUtils.getSidebarLines()
-            for (line in lines) {
-                if (line.contains("Dungeon Hub", ignoreCase = true)) return false
-                if (line.contains("The Catacombs", ignoreCase = true) || line.contains("Catacombs (", ignoreCase = true)) return true
-                if (line.contains("Dungeon Cleared:", ignoreCase = true) || line.contains("Cleared:", ignoreCase = true)) return true
-            }
-            return false
-        }
+    var inDungeon: Boolean = false
+        private set
 
     var dungeonFloor: String? = null
     var dungeonFloorNumber: Int? = null
@@ -53,26 +45,22 @@ object LocationUtils {
     }
 
     fun updateLocationState() {
-        val lines = ScoreboardUtils.getSidebarLines()
-        if (lines.isNotEmpty()) {
-            inSkyblock = onHypixel && (ScoreboardUtils.getSidebarTitle().contains("SKYBLOCK", ignoreCase = true) || inSkyblock)
+        val snap = ScoreboardUtils.getSnapshot()
+        if (snap.cleanLines.isNotEmpty()) {
+            inSkyblock = onHypixel && (snap.isSkyblock || inSkyblock)
         }
+        inDungeon = snap.inDungeon
 
-        var foundFloor: String? = null
-        for (line in lines) {
-            val match = floorRegex.find(line)
-            if (match != null) {
-                foundFloor = match.groupValues[1].uppercase()
-                break
-            }
-        }
+        var foundFloor = snap.dungeonFloor
+        var foundFloorNum = snap.dungeonFloorNumber
 
-        if (foundFloor == null) {
+        if (foundFloor == null && inDungeon) {
             for (entry in TabListUtils.getTabList()) {
                 val clean = ChatUtils.run { entry.first.string.removeFormatting().trim() }
                 val match = floorRegex.find(clean)
                 if (match != null) {
                     foundFloor = match.groupValues[1].uppercase()
+                    foundFloorNum = if (foundFloor == "E") 0 else foundFloor.filter { it.isDigit() }.toIntOrNull() ?: 1
                     break
                 }
             }
@@ -80,20 +68,21 @@ object LocationUtils {
 
         if (foundFloor != null) {
             dungeonFloor = foundFloor
-            dungeonFloorNumber = when {
-                foundFloor == "E" -> 0
-                else -> foundFloor.filter { it.isDigit() }.toIntOrNull() ?: 1
-            }
+            dungeonFloorNumber = foundFloorNum ?: 1
         }
 
         val player = mc.player
         if (player != null && inDungeon) {
             updateBossStatus(player.x, player.y, player.z)
+        } else {
+            inBoss = false
         }
     }
 
     private fun reset() {
+        cachedOnHypixel = null
         inSkyblock = false
+        inDungeon = false
         dungeonFloor = null
         dungeonFloorNumber = null
         inBoss = false

@@ -176,6 +176,11 @@ object MapRenderer {
         }
     }
 
+    private val COLOR_GREEN = Color(85, 255, 85)
+    private val COLOR_FAILED = Color(255, 0, 0)
+    private val COLOR_CLEARED = Color(255, 255, 255)
+    private val COLOR_UNDISCOVERED = Color(170, 170, 170)
+
     private fun renderText(ctx: GuiGraphicsExtractor) {
         val config = ConfigManager.config.map
         val mc = Minecraft.getInstance()
@@ -196,10 +201,10 @@ object MapRenderer {
             val cY = (checkPos.second / 2f) * fullCellSize + halfRoom
 
             val color = when (roomTile.state) {
-                RoomState.GREEN -> Color(85, 255, 85)
-                RoomState.FAILED -> Color(255, 0, 0)
-                RoomState.CLEARED -> Color(255, 255, 255)
-                else -> Color(170, 170, 170)
+                RoomState.GREEN -> COLOR_GREEN
+                RoomState.FAILED -> COLOR_FAILED
+                RoomState.CLEARED -> COLOR_CLEARED
+                else -> COLOR_UNDISCOVERED
             }
 
             val showName = config.showRoomNames || config.checkmarkStyle in listOf(2, 3)
@@ -255,12 +260,21 @@ object MapRenderer {
     private fun renderPlayerHeads(ctx: GuiGraphicsExtractor) {
         if (LocationUtils.inBoss) return
 
+        val config = ConfigManager.config.map
+        val heldItem = Minecraft.getInstance().player?.mainHandItem
+        val heldId = heldItem?.skyblockId ?: ""
+        val isHoldingLeap = heldId == "SPIRIT_LEAP" || heldId == "INFINITE_SPIRIT_LEAP" || heldId == "HAUNT_ABILITY"
+        val globalShouldDrawName = config.playerNames == 2 || (config.playerNames == 1 && isHoldingLeap)
+
         DungeonListener.dungeonTeammatesNoSelf.forEach { player ->
             if (player.isDead) return@forEach
-            drawPlayerHead(ctx, player)
+            drawPlayerHead(ctx, player, globalShouldDrawName)
         }
 
-        drawPlayerHead(ctx, DungeonListener.thePlayer ?: return)
+        val self = DungeonListener.thePlayer
+        if (self != null) {
+            drawPlayerHead(ctx, self, globalShouldDrawName)
+        }
     }
 
     private fun drawCheckmark(ctx: GuiGraphicsExtractor, tile: Tile, x: Number, y: Number, size: Number) {
@@ -276,9 +290,8 @@ object MapRenderer {
         ctx.drawTexture(checkmark, x, y, size, size)
     }
 
-    private fun drawPlayerHead(ctx: GuiGraphicsExtractor, teammate: DungeonPlayer) {
+    private fun drawPlayerHead(ctx: GuiGraphicsExtractor, teammate: DungeonPlayer, shouldDrawName: Boolean) {
         val config = ConfigManager.config.map
-        val mc = Minecraft.getInstance()
         val entity = teammate.entity
 
         val (x, z, yaw) = if (entity == null || !entity.isAlive) {
@@ -308,11 +321,6 @@ object MapRenderer {
             ctx.drawBorder(-7, -7, 14, 14, borderColor)
             ctx.drawPlayerHead(-6, -6, 12, teammate.skin)
         }
-
-        val heldItem = mc.player?.mainHandItem
-        val shouldDrawName = config.playerNames == 2 || (config.playerNames == 1
-            && (heldItem != null && (heldItem.skyblockId == "SPIRIT_LEAP" || heldItem.skyblockId == "INFINITE_SPIRIT_LEAP"
-            || heldItem.skyblockId == "HAUNT_ABILITY")))
 
         if (shouldDrawName) {
             ctx.pose().rotate(-headYaw)

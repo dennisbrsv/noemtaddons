@@ -97,14 +97,20 @@ object PathfindingUtils {
         return hasLineOfSight(eyePos, centerTarget1) || hasLineOfSight(eyePos, centerTarget2)
     }
 
+    private var cachedFloorCenter: BlockPos? = null
+    private var cachedFloorPositions: List<BlockPos> = emptyList()
+
     fun getBloodRoomFloorPositions(): List<BlockPos> {
         val level = mc.level ?: return emptyList()
-        val player = mc.player ?: return emptyList()
 
         val center = dev.noemt.client.features.blood.AutoBloodCamp.getBloodRoomCenter()
             ?: return emptyList()
 
-        val floorPositions = mutableListOf<BlockPos>()
+        if (cachedFloorCenter == center && cachedFloorPositions.isNotEmpty()) {
+            return cachedFloorPositions
+        }
+
+        val floorPositions = ArrayList<BlockPos>(300)
         val cX = center.x
         val cZ = center.z
 
@@ -129,6 +135,8 @@ object PathfindingUtils {
                 }
             }
         }
+        cachedFloorCenter = center
+        cachedFloorPositions = floorPositions
         return floorPositions
     }
 

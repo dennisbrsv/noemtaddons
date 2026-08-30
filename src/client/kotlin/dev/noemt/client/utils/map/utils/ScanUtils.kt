@@ -58,8 +58,26 @@ object ScanUtils {
         }
     }
 
-    fun getRoomData(hash: Int) = roomList.find { hash in it.cores }
-    fun getRoomData(name: String) = roomList.find { it.name == name }
+    private val coreMap: Map<Int, RoomData> by lazy {
+        val map = HashMap<Int, RoomData>()
+        for (room in roomList) {
+            for (core in room.cores) {
+                map[core] = room
+            }
+        }
+        map
+    }
+
+    private val nameMap: Map<String, RoomData> by lazy {
+        val map = HashMap<String, RoomData>()
+        for (room in roomList) {
+            map[room.name] = room
+        }
+        map
+    }
+
+    fun getRoomData(hash: Int): RoomData? = coreMap[hash]
+    fun getRoomData(name: String): RoomData? = nameMap[name]
 
     fun getRoomGraf(pos: Vec3): Pair<Int, Int> {
         val roomIndexX = round((pos.x - startX) / DungeonScanner.roomSize).toInt()

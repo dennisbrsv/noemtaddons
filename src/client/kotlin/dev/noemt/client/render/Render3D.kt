@@ -328,8 +328,15 @@ object Render3D {
     }
 
     private fun VertexConsumer.addLine(pose: PoseStack.Pose, x1: Float, y1: Float, z1: Float, x2: Float, y2: Float, z2: Float, r: Float, g: Float, b: Float, a: Float, lineWidth: Float) {
-        val normal = Vector3f(x2 - x1, y2 - y1, z2 - z1).apply { if (lengthSquared() > 0f) normalize() }
-        addVertex(pose, x1, y1, z1).setColor(r, g, b, a).setNormal(pose, normal).setLineWidth(lineWidth)
-        addVertex(pose, x2, y2, z2).setColor(r, g, b, a).setNormal(pose, normal).setLineWidth(lineWidth)
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val dz = z2 - z1
+        val lenSq = dx * dx + dy * dy + dz * dz
+        val invLen = if (lenSq > 0f) 1f / kotlin.math.sqrt(lenSq) else 0f
+        val nx = dx * invLen
+        val ny = dy * invLen
+        val nz = dz * invLen
+        addVertex(pose, x1, y1, z1).setColor(r, g, b, a).setNormal(pose, nx, ny, nz).setLineWidth(lineWidth)
+        addVertex(pose, x2, y2, z2).setColor(r, g, b, a).setNormal(pose, nx, ny, nz).setLineWidth(lineWidth)
     }
 }

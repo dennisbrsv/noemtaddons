@@ -25,18 +25,36 @@ object WorldUtils {
     fun getBlockEntityList(): List<BlockPos> {
         val player = mc.player ?: return emptyList()
         val level = mc.level ?: return emptyList()
-        val renderDistance = mc.options.renderDistance().get()
-        val pX = player.chunkPosition().x
-        val pZ = player.chunkPosition().z
 
-        return buildList {
-            for (x in (pX - renderDistance)..(pX + renderDistance)) {
-                for (z in (pZ - renderDistance)..(pZ + renderDistance)) {
-                    if (!level.hasChunk(x, z)) continue
-                    val chunk = level.getChunk(x, z)
-                    addAll(chunk.blockEntitiesPos)
-                }
+        val minChunkX: Int
+        val maxChunkX: Int
+        val minChunkZ: Int
+        val maxChunkZ: Int
+
+        if (LocationUtils.inDungeon) {
+            // Dungeon grid is bounded within startX (-185) to +15 -> chunks -13..2
+            minChunkX = -13
+            maxChunkX = 2
+            minChunkZ = -13
+            maxChunkZ = 2
+        } else {
+            val renderDistance = mc.options.renderDistance().get().coerceAtMost(8)
+            val pX = player.chunkPosition().x
+            val pZ = player.chunkPosition().z
+            minChunkX = pX - renderDistance
+            maxChunkX = pX + renderDistance
+            minChunkZ = pZ - renderDistance
+            maxChunkZ = pZ + renderDistance
+        }
+
+        val list = ArrayList<BlockPos>(128)
+        for (x in minChunkX..maxChunkX) {
+            for (z in minChunkZ..maxChunkZ) {
+                if (!level.hasChunk(x, z)) continue
+                val chunk = level.getChunk(x, z)
+                list.addAll(chunk.blockEntitiesPos)
             }
         }
+        return list
     }
 }

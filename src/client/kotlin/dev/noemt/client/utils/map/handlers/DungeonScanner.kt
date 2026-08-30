@@ -58,9 +58,14 @@ object DungeonScanner {
             if (mimicRoom != null) return@register
             if (floor < 6) return@register
 
-            findMimicRoom()
+            if (System.currentTimeMillis() - lastMimicScanTime >= 1000) {
+                findMimicRoom()
+                lastMimicScanTime = System.currentTimeMillis()
+            }
         }
     }
+
+    private var lastMimicScanTime = 0L
 
     private fun scan() {
         var allChunksLoaded = true
