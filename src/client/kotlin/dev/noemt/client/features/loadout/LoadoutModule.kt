@@ -129,7 +129,9 @@ object LoadoutModule : Module {
                     LoadoutManager.checkConditions(ConditionContext(location = "The Catacombs DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.ENTRANCE))
                 }
                 dev.noemt.client.utils.map.core.RoomType.BLOOD -> {
-                    LoadoutManager.checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.BLOOD))
+                    if (dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom(strict = true)) {
+                        LoadoutManager.checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.BLOOD))
+                    }
                 }
                 else -> {}
             }

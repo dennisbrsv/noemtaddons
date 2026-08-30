@@ -584,6 +584,11 @@ object LoadoutManager {
     }
 
     fun onTick() {
+        // 0. Safety timeout for ongoing automated swap
+        if (isExecutingSwap && System.currentTimeMillis() - lastSwapExecutionMs > 4000L) {
+            resetSwap()
+        }
+
         // 1. Check Death / Ghost / Respawn State
         val deadOrGhost = isPlayerDeadOrGhost()
         if (wasDeadOrGhost && !deadOrGhost) {
@@ -611,9 +616,9 @@ object LoadoutManager {
         // 2. Miniboss Memory Tracking Check
         checkMinibossTrackingTick()
 
-        // 3. Immediate Blood Room Entry Check every tick (instant rule trigger upon entering)
+        // 3. Immediate Blood Room Entry Check every tick (strictly inside the room, not at the doorway)
         if (ConfigManager.config.loadout.enabled && (lastDetectedInstance == GameInstanceType.DUNGEONS || LocationUtils.inDungeon)) {
-            val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+            val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom(strict = true)
             if (inBlood) {
                 if (!bloodRoomTriggeredThisEntry) {
                     val bloodRule = rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
@@ -805,8 +810,8 @@ object LoadoutManager {
                 dungeonRunTriggeredThisFloor = true
             }
 
-            // Blood Room entry transition detection
-            val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+            // Blood Room entry transition detection (strictly inside the room)
+            val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom(strict = true)
             if (inBlood && !wasInBloodRoom) {
                 wasInBloodRoom = true
                 checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))

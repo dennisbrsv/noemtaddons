@@ -84,9 +84,7 @@ sealed class LoadoutCondition {
     ) : LoadoutCondition() {
         override fun matches(context: ConditionContext): Boolean {
             if (!LocationUtils.inDungeon) return false
-            if (context.inBloodRoom == true) return true
-            if (context.dungeonRoomType == dev.noemt.client.utils.map.core.RoomType.BLOOD) return true
-            return dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom()
+            return dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom(strict = true)
         }
     }
 

@@ -724,20 +724,26 @@ object AutoBloodCamp : Module {
         return null
     }
 
-    fun isPlayerInBloodRoom(): Boolean {
+    fun isPlayerInBloodRoom(strict: Boolean = false): Boolean {
         val player = mc.player ?: return false
         if (!LocationUtils.inDungeon || LocationUtils.inBoss) return false
         val playerPos = player.position()
 
-        val currentRoom = ScanUtils.currentRoom ?: ScanUtils.getRoomFromPos(playerPos)
-        if (currentRoom?.data?.type == RoomType.BLOOD) return true
+        val center = getBloodRoomCenter()
+        if (center != null) {
+            val dx = abs(playerPos.x - (center.x + 0.5))
+            val dz = abs(playerPos.z - (center.z + 0.5))
+            val maxHorizontal = if (strict) 14.0 else 18.0
+            val yRange = if (strict) 66.0..80.0 else 55.0..95.0
+            return dx <= maxHorizontal && dz <= maxHorizontal && playerPos.y in yRange
+        }
 
-        val center = getBloodRoomCenter() ?: return false
-        val dx = abs(playerPos.x - (center.x + 0.5))
-        val dz = abs(playerPos.z - (center.z + 0.5))
+        if (!strict) {
+            val currentRoom = ScanUtils.currentRoom ?: ScanUtils.getRoomFromPos(playerPos)
+            if (currentRoom?.data?.type == RoomType.BLOOD) return true
+        }
 
-        // Generous room boundary: inside the blood room floor area and doorways
-        return dx <= 18.0 && dz <= 18.0 && playerPos.y in 55.0..95.0
+        return false
     }
 
     fun isInsideBloodRoom(vec: Vec3): Boolean {

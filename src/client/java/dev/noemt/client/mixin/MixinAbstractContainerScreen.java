@@ -18,8 +18,40 @@ public abstract class MixinAbstractContainerScreen extends Screen {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void onKeyPressedHead(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+            cir.setReturnValue(true);
+            return;
+        }
         if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_F4) {
             dev.noemt.client.utils.DebugUtils.INSTANCE.dumpHoveredOrHeldItem();
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void onMouseClickedHead(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
+    private void onMouseReleasedHead(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
+    private void onMouseDraggedHead(double mouseX, double mouseY, int button, double dragX, double dragY, CallbackInfoReturnable<Boolean> cir) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
+    private void onMouseScrolledHead(double mouseX, double mouseY, double scrollX, double scrollY, CallbackInfoReturnable<Boolean> cir) {
+        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
             cir.setReturnValue(true);
         }
     }
