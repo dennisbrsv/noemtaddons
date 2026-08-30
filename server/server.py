@@ -508,7 +508,7 @@ class AutoBuilder:
 
             await send_to_target("all", {
                 "type": "MESSAGE",
-                "message": f"&b[NoemtAddons] &aServer updated to build &e{short_hash}&a! Restart game when ready."
+                "message": f"&aServer updated to build &e{short_hash}&a! Restart game when ready."
             })
             await send_to_target("all", {
                 "type": "TITLE",
