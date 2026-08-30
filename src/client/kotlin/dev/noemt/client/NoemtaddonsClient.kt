@@ -182,6 +182,8 @@ object NoemtaddonsClient : ClientModInitializer {
                         )
                         .then(buildLoadoutCommandNode("loadouts"))
                         .then(buildLoadoutCommandNode("loadout"))
+                        .then(buildMaskCommandNode("mask"))
+                        .then(buildMaskCommandNode("automask"))
                         .executes { context ->
                             val client = context.source.client
                             client.execute {
@@ -194,6 +196,8 @@ object NoemtaddonsClient : ClientModInitializer {
 
             // Quick shortcut aliases
             dispatcher.register(buildLoadoutCommandNode("als"))
+            dispatcher.register(buildMaskCommandNode("mask"))
+            dispatcher.register(buildMaskCommandNode("automask"))
             dispatcher.register(
                 ClientCommands.literal("lore")
                     .executes {
@@ -482,6 +486,89 @@ object NoemtaddonsClient : ClientModInitializer {
                 net.minecraft.client.Minecraft.getInstance().execute {
                     net.minecraft.client.Minecraft.getInstance().setScreen(dev.noemt.client.features.loadout.LoadoutScreen())
                 }
+                1
+            }
+    }
+
+    private fun buildMaskCommandNode(literal: String): com.mojang.brigadier.builder.LiteralArgumentBuilder<net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> {
+        return ClientCommands.literal(literal)
+            .then(
+                ClientCommands.literal("toggle")
+                    .executes {
+                        val config = ConfigManager.config.mask
+                        config.enabled = !config.enabled
+                        ConfigManager.save()
+                        val state = if (config.enabled) "&aENABLED" else "&cDISABLED"
+                        ChatUtils.modMessage("&b[AutoMask] &7Auto Mask Swapper is now $state&7.")
+                        1
+                    }
+            )
+            .then(
+                ClientCommands.literal("status")
+                    .executes {
+                        val config = ConfigManager.config.mask
+                        val state = if (config.enabled) "&aENABLED" else "&cDISABLED"
+                        ChatUtils.modMessage("&b&l=== Auto Mask Swapper Status ===")
+                        ChatUtils.modMessage("&7State: $state &7| Trigger: &c${config.triggerHearts} ❤ &7(${"%.1f".format(config.triggerHearts * 2f)} HP)")
+                        ChatUtils.modMessage("&7In Boss Room: ${if (config.allowInBoss) "&aAllowed" else "&cDisabled"}")
+                        val player = net.minecraft.client.Minecraft.getInstance().player
+                        if (player != null) {
+                            val currentHearts = player.health / 2f
+                            ChatUtils.modMessage("&7Player Health: &c${"%.1f".format(currentHearts)} ❤ &7(${"%.1f".format(player.health)} HP)")
+                        }
+                        val tracked = dev.noemt.client.features.mask.AutoMaskManager.getTrackedMasks()
+                        if (tracked.isEmpty()) {
+                            ChatUtils.modMessage("&7Tracked Masks in Inventory: &cNone")
+                        } else {
+                            ChatUtils.modMessage("&7Tracked Masks in Inventory:")
+                            for (mask in tracked) {
+                                val cdStr = if (mask.isOnCooldown) "&c(Cooldown: ${"%.1f".format(mask.cooldownRemainingMs / 1000f)}s)" else "&a(Ready)"
+                                ChatUtils.modMessage(" &e• &f${mask.displayName} &7(Slot ${mask.inventorySlot}) $cdStr")
+                            }
+                        }
+                        val isEquipped = dev.noemt.client.features.mask.AutoMaskManager.isMaskEquipped
+                        val activeType = dev.noemt.client.features.mask.AutoMaskManager.activeMaskType
+                        val orig = dev.noemt.client.features.mask.AutoMaskManager.originalHelmet
+                        if (isEquipped && activeType != null) {
+                            ChatUtils.modMessage("&7Active Mask: &e${activeType.displayName} &a[EQUIPPED]")
+                            ChatUtils.modMessage("&7Original Helmet: &f${orig?.displayName ?: "Unknown"}")
+                        } else {
+                            ChatUtils.modMessage("&7Mask Active: &7No (Normal gear)")
+                        }
+                        1
+                    }
+            )
+            .then(
+                ClientCommands.literal("swap")
+                    .executes {
+                        val tracked = dev.noemt.client.features.mask.AutoMaskManager.getTrackedMasks()
+                        if (tracked.isEmpty()) {
+                            ChatUtils.modMessage("&c[AutoMask] No Bonzo's Mask or Spirit Mask found in inventory.")
+                        } else {
+                            val mask = tracked.find { !it.isOnCooldown } ?: tracked.first()
+                            dev.noemt.client.features.mask.AutoMaskManager.swapToMask(mask, "Manual Command")
+                        }
+                        1
+                    }
+            )
+            .then(
+                ClientCommands.literal("revert")
+                    .executes {
+                        dev.noemt.client.features.mask.AutoMaskManager.swapBackToOriginalHelmet("Manual Command")
+                        1
+                    }
+            )
+            .then(
+                ClientCommands.literal("back")
+                    .executes {
+                        dev.noemt.client.features.mask.AutoMaskManager.swapBackToOriginalHelmet("Manual Command")
+                        1
+                    }
+            )
+            .executes {
+                val config = ConfigManager.config.mask
+                val state = if (config.enabled) "&aENABLED" else "&cDISABLED"
+                ChatUtils.modMessage("&b[AutoMask] &7State: $state &7| Trigger: &c${config.triggerHearts} ❤ &7| Subcommands: &e\$mask status&7, &e\$mask toggle&7, &e\$mask swap&7, &e\$mask revert")
                 1
             }
     }

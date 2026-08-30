@@ -37,6 +37,73 @@ open class NoemtaddonsConfig : Config() {
     @JvmField
     var loadout: LoadoutCategory = LoadoutCategory()
 
+    @Expose
+    @Category(name = "Auto Mask Swapper", desc = "Auto Bonzo's and Spirit Mask swapper on low health with auto-revert")
+    @JvmField
+    var mask: MaskCategory = MaskCategory()
+
+    class MaskCategory {
+        @Expose
+        @ConfigOption(name = "Enable Auto Mask Swapper", desc = "Automatically swaps to Bonzo's or Spirit Mask via /equipment on low health.")
+        @ConfigEditorBoolean
+        @JvmField
+        var enabled: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "Trigger Health (Vanilla Hearts)", desc = "Vanilla hearts threshold (e.g. 3.0 hearts = 6 HP). When health drops below this, auto mask swap triggers.")
+        @ConfigEditorSlider(minValue = 1.0f, maxValue = 10.0f, minStep = 0.5f)
+        @JvmField
+        var triggerHearts: Float = 3.0f
+
+        @Expose
+        @ConfigOption(name = "Mask Priority", desc = "0: Spirit Mask > Bonzo's Mask, 1: Bonzo's Mask > Spirit Mask, 2: First Available")
+        @ConfigEditorSlider(minValue = 0f, maxValue = 2f, minStep = 1f)
+        @JvmField
+        var maskPriority: Int = 0
+
+        @Expose
+        @ConfigOption(name = "Allow In Boss Room", desc = "Allows mask swapping inside dungeon boss rooms (Default: False).")
+        @ConfigEditorBoolean
+        @JvmField
+        var allowInBoss: Boolean = false
+
+        @Expose
+        @ConfigOption(name = "Notification Sound", desc = "Plays sound when mask is equipped or original helmet is restored.")
+        @ConfigEditorBoolean
+        @JvmField
+        var playSound: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "Show HUD Status", desc = "Renders mask availability, cooldowns, and active status on screen.")
+        @ConfigEditorBoolean
+        @JvmField
+        var showHud: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "HUD X Position", desc = "Horizontal screen position of the mask HUD indicator.")
+        @ConfigEditorSlider(minValue = 0f, maxValue = 1000f, minStep = 1f)
+        @JvmField
+        var hudX: Float = 10f
+
+        @Expose
+        @ConfigOption(name = "HUD Y Position", desc = "Vertical screen position of the mask HUD indicator.")
+        @ConfigEditorSlider(minValue = 0f, maxValue = 1000f, minStep = 1f)
+        @JvmField
+        var hudY: Float = 25f
+
+        @Expose
+        @ConfigOption(name = "Swap Back Delay (ms)", desc = "Delay in milliseconds after chat proc before opening /equipment to swap back.")
+        @ConfigEditorSlider(minValue = 0f, maxValue = 500f, minStep = 25f)
+        @JvmField
+        var swapBackDelayMs: Float = 50f
+
+        @Expose
+        @ConfigOption(name = "Auto-Revert Timeout (seconds)", desc = "Automatically swaps back after X seconds if mask ability never procced (0 = disabled / chat trigger only).")
+        @ConfigEditorSlider(minValue = 0f, maxValue = 60f, minStep = 5f)
+        @JvmField
+        var autoRevertTimeout: Float = 0f
+    }
+
     class LoadoutCategory {
         @Expose
         @ConfigOption(name = "Enable Loadout Swapper", desc = "Master toggle for conditional and keybind loadout swapping (Run \$loadout gui).")

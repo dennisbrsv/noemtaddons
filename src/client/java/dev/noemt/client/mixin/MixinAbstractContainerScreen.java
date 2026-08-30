@@ -17,9 +17,14 @@ public abstract class MixinAbstractContainerScreen extends Screen {
         super(title);
     }
 
+    private boolean isSwapInputBlocked() {
+        return dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isSwapping() ||
+               dev.noemt.client.features.mask.AutoMaskManager.INSTANCE.isSwapping();
+    }
+
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void onKeyPressedHead(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+        if (isSwapInputBlocked()) {
             cir.setReturnValue(true);
             return;
         }
@@ -31,28 +36,28 @@ public abstract class MixinAbstractContainerScreen extends Screen {
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void onMouseClickedHead(MouseButtonEvent event, boolean doubleClick, CallbackInfoReturnable<Boolean> cir) {
-        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+        if (isSwapInputBlocked()) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
     private void onMouseReleasedHead(MouseButtonEvent event, CallbackInfoReturnable<Boolean> cir) {
-        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+        if (isSwapInputBlocked()) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
     private void onMouseDraggedHead(MouseButtonEvent event, double dragX, double dragY, CallbackInfoReturnable<Boolean> cir) {
-        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+        if (isSwapInputBlocked()) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
     private void onMouseScrolledHead(double mouseX, double mouseY, double scrollX, double scrollY, CallbackInfoReturnable<Boolean> cir) {
-        if (dev.noemt.client.features.loadout.LoadoutManager.INSTANCE.isExecutingSwap()) {
+        if (isSwapInputBlocked()) {
             cir.setReturnValue(true);
         }
     }
