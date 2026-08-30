@@ -39,15 +39,15 @@ class EventsCog(commands.Cog, name="Events"):
     async def on_build_completed(self, success: bool, duration: float, short_hash: str, author: str, latest_msg: str, mod_size_kb: float, error_tail: str = ""):
         if success:
             embed = discord.Embed(
-                title=f"🚀 Deployment Succeeded (`{short_hash}`)",
-                description=f"**New version deployed**\n\n> 📝 *\"{latest_msg}\"*",
+                title=f"🚀 Release Deployed (`{short_hash}`)",
+                description=f"**New version pulled & active**\n\n> 📝 *\"{latest_msg}\"*",
                 color=0x34A853,
                 timestamp=datetime.utcnow()
             )
             embed.add_field(name="Author", value=author, inline=True)
-            embed.add_field(name="Build Time", value=f"`{duration}s`", inline=True)
+            embed.add_field(name="Sync Time", value=f"`{duration}s`", inline=True)
             embed.add_field(name="Mod Artifact", value=f"`{mod_size_kb:.1f} KB`", inline=True)
-            embed.set_footer(text="NoemtAddons CI/CD Pipeline")
+            embed.set_footer(text="NoemtAddons Release Pipeline")
             await self.send_to_channel(embed)
         else:
             embed = discord.Embed(

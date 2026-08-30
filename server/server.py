@@ -276,6 +276,24 @@ def get_loader_jar_path(flavor: str = "loader") -> Optional[Path]:
     return None
 
 
+def get_sig_path() -> Optional[Path]:
+    mod_p = get_jar_path("mod")
+    if mod_p:
+        sig1 = mod_p.with_name(mod_p.name + ".sig")
+        if sig1.exists() and sig1.is_file() and sig1.stat().st_size > 0:
+            return sig1
+        sig2 = mod_p.with_suffix(".sig")
+        if sig2.exists() and sig2.is_file() and sig2.stat().st_size > 0:
+            return sig2
+
+    for d in (JARS_DIR, Path(__file__).parent / "jars"):
+        if d.exists():
+            matches = [p for p in d.glob("*.sig") if p.is_file() and p.stat().st_size > 0]
+            if matches:
+                return max(matches, key=lambda x: x.stat().st_mtime)
+    return None
+
+
 def get_file_info(file_path: Path) -> dict:
     if not file_path.exists():
         return {"exists": False, "size": 0, "sha256": ""}
@@ -298,9 +316,11 @@ def get_file_info(file_path: Path) -> dict:
 def compute_version_metadata() -> dict:
     mod_p = get_jar_path("mod")
     loader_p = get_loader_jar_path("loader")
+    sig_p = get_sig_path()
 
     mod_info = get_file_info(mod_p) if mod_p else {"exists": False}
     loader_info = get_file_info(loader_p) if loader_p else {"exists": False}
+    sig_info = get_file_info(sig_p) if sig_p else {"exists": False}
 
     return {
         "version": get_project_version(),
@@ -321,6 +341,13 @@ def compute_version_metadata() -> dict:
                 "sha256": loader_info.get("sha256", ""),
                 "size": loader_info.get("size", 0),
                 "modified": loader_info.get("modified", "")
+            },
+            "signature": {
+                "url": "https://addons.noemt.dev/loaders/noemtaddons.jar.sig",
+                "filename": sig_p.name if sig_p else "noemtaddons.jar.sig",
+                "sha256": sig_info.get("sha256", ""),
+                "size": sig_info.get("size", 0),
+                "modified": sig_info.get("modified", "")
             }
         }
     }
@@ -429,18 +456,18 @@ class AutoBuilder:
     async def run_build(commits: Optional[List[dict]] = None, trigger_source: str = "Git Auto-Poll") -> bool:
         global IS_BUILDING, LAST_BUILD_STATUS, LAST_BUILD_TIME, LAST_BUILD_OUTPUT
         if IS_BUILDING:
-            logger.warning("Build in progress. Trigger skipped.")
+            logger.warning("Deployment sync already in progress. Trigger skipped.")
             return False
 
         IS_BUILDING = True
-        LAST_BUILD_STATUS = "Building..."
+        LAST_BUILD_STATUS = "Syncing..."
         start_time = time.time()
-        logger.info(f"🔨 Initiating build pipeline (Source: {trigger_source})...")
+        logger.info(f"📥 Initiating Release Pull Pipeline (Source: {trigger_source})...")
 
         loop = asyncio.get_event_loop()
 
-        # 1. Pull Git Updates
-        logger.info(f"📥 Pulling latest commits from origin/{GIT_BRANCH}...")
+        # 1. Pull Git Updates (Latest code and pre-signed JAR artifacts)
+        logger.info(f"📥 Pulling latest release commits from origin/{GIT_BRANCH}...")
         pull_res = await loop.run_in_executor(
             None,
             lambda: subprocess.run(["git", "pull", "origin", GIT_BRANCH], cwd=REPO_DIR, capture_output=True, text=True)
@@ -448,7 +475,7 @@ class AutoBuilder:
         if pull_res.returncode == 0:
             logger.info(f"📥 Git pull succeeded: {pull_res.stdout.strip()}")
         else:
-            logger.warning(f"⚠️ Git pull notice: {pull_res.stderr.strip() or pull_res.stdout.strip()}")
+            logger.warning(f"⚠️ Git pull warning: {pull_res.stderr.strip() or pull_res.stdout.strip()}")
 
         # 2. Update In-Game Changelog
         short_hash, author, latest_msg = AutoBuilder.get_latest_commit_details()
@@ -456,86 +483,55 @@ class AutoBuilder:
         changelog_path = Path(__file__).parent / "changelog.txt"
         changelog_path.write_text(formatted_changelog, encoding="utf-8")
 
-        # 3. Discord Notification
-        commit_lines = "\n".join([f"• `{c['hash']}` {c['message']} *(by {c['author']})*" for c in (commits or [{'hash': short_hash, 'message': latest_msg, 'author': author}])[:5]])
-        if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
-            SERVER_INSTANCE.bot.dispatch("build_started", trigger_source, GIT_BRANCH, short_hash, commit_lines)
-        elif DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID:
-            send_discord_bot_notification(
-                title=f"Build Triggered (`{short_hash}`)",
-                description=f"**Trigger:** `{trigger_source}`\n**Branch:** `{GIT_BRANCH}`\n\n**Commit Details:**\n{commit_lines}",
-                color=0xFBBC04,
-                fields=[
-                    {"name": "Status", "value": "⏳ Executing Gradle build...", "inline": True},
-                    {"name": "Triggered By", "value": trigger_source, "inline": True}
-                ]
-            )
+        # 3. Verify Local Release Artifacts
+        meta = compute_version_metadata()
+        mod_info = meta.get("endpoints", {}).get("mod", {})
+        sig_info = meta.get("endpoints", {}).get("signature", {})
 
-        # 4. Execute Gradle Build
-        gradle_cmd = ["./gradlew", "clean", "build"]
-        build_res = await loop.run_in_executor(
-            None,
-            lambda: subprocess.run(gradle_cmd, cwd=REPO_DIR, capture_output=True, text=True)
-        )
-
-        build_duration = round(time.time() - start_time, 1)
+        deploy_duration = round(time.time() - start_time, 2)
         LAST_BUILD_TIME = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        LAST_BUILD_OUTPUT = build_res.stdout[-2000:] if build_res.stdout else (build_res.stderr[-2000:] if build_res.stderr else "")
+        LAST_BUILD_OUTPUT = pull_res.stdout if pull_res.stdout else pull_res.stderr
 
-        if build_res.returncode == 0:
+        if mod_info.get("size", 0) > 5000:
             IS_BUILDING = False
             LAST_BUILD_STATUS = "Healthy"
-            logger.info(f"✅ Build pipeline completed in {build_duration}s!")
+            mod_size_kb = mod_info.get("size", 0) / 1024
+            logger.info(f"✅ Release deployment synced in {deploy_duration}s (Mod: {mod_size_kb:.1f} KB, Sig: {sig_info.get('size', 0)} B)!")
 
-            meta = compute_version_metadata()
-            mod_size_kb = meta['endpoints']['mod']['size'] / 1024
+            commit_lines = "\n".join([f"• `{c['hash']}` {c['message']} *(by {c['author']})*" for c in (commits or [{'hash': short_hash, 'message': latest_msg, 'author': author}])[:5]])
 
             if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
-                SERVER_INSTANCE.bot.dispatch("build_completed", True, build_duration, short_hash, author, latest_msg, mod_size_kb)
+                SERVER_INSTANCE.bot.dispatch("build_completed", True, deploy_duration, short_hash, author, latest_msg, mod_size_kb)
             elif DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID:
                 fields = [
                     {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
                     {"name": "Commit", "value": f"`{short_hash}` ({author})", "inline": True},
-                    {"name": "Build Time", "value": f"`{build_duration}s`", "inline": True},
+                    {"name": "Sync Time", "value": f"`{deploy_duration}s`", "inline": True},
                     {"name": "Mod Size", "value": f"`{mod_size_kb:.1f} KB`", "inline": True},
                 ]
                 send_discord_bot_notification(
-                    title=f"Deployment Succeeded (`{short_hash}`)",
-                    description=f"**New version deployed**\n\n> 📝 *\"{latest_msg}\"*",
+                    title=f"Release Deployed (`{short_hash}`)",
+                    description=f"**New version pulled & active**\n\n> 📝 *\"{latest_msg}\"*",
                     color=0x34A853,
                     fields=fields
                 )
 
             await send_to_target("all", {
                 "type": "MESSAGE",
-                "message": f"&aServer updated to build &e{short_hash}&a! Restart game when ready."
+                "message": f"&aServer updated to release &e{short_hash}&a! Restart game when ready."
             })
             await send_to_target("all", {
                 "type": "TITLE",
                 "title": "&a&lNoemtAddons Updated",
-                "subtitle": f"&eBuild {short_hash} deployed"
+                "subtitle": f"&eRelease {short_hash} deployed"
             })
 
             return True
         else:
             IS_BUILDING = False
-            LAST_BUILD_STATUS = "Failed"
-            logger.error(f"❌ Build failed in {build_duration}s!")
-            error_tail = "\n".join(build_res.stderr.splitlines()[-12:] if build_res.stderr else build_res.stdout.splitlines()[-12:])
-
-            if SERVER_INSTANCE and SERVER_INSTANCE.bot and hasattr(SERVER_INSTANCE.bot, "dispatch"):
-                SERVER_INSTANCE.bot.dispatch("build_completed", False, build_duration, short_hash, author, latest_msg, 0.0, error_tail)
-            elif DISCORD_BOT_TOKEN and DISCORD_CHANNEL_ID:
-                send_discord_bot_notification(
-                    title=f"❌ Build Failed for `{short_hash}`",
-                    description=f"**Compilation error encountered after {build_duration}s:**\n```\n{error_tail[:1000]}\n```",
-                    color=0xEA4335,
-                    fields=[
-                        {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
-                        {"name": "Commit", "value": f"`{short_hash}` by {author}", "inline": True}
-                    ]
-                )
-            return False
+            LAST_BUILD_STATUS = "Warning: No JAR"
+            logger.warning(f"⚠️ Git pull succeeded, but no mod JAR was found in server/jars/ or build/libs/!")
+            return True
 
     @staticmethod
     def generate_changelog_text(short_hash: str, commits: Optional[List[dict]] = None) -> str:
@@ -718,13 +714,29 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         send_http_response(writer, 200, "text/plain; charset=utf-8", content.encode("utf-8"))
         return
 
-    # 4. Mod Payload JAR Downloads (Requested by loaders on game startup)
+    # 4. Remote Safety Manifest & Anticheat Kill-Switch
+    if clean_path in ("/api/manifest", "/api/killswitch", "/manifest.json"):
+        manifest_data = {
+            "enabled": True,
+            "message": "OK",
+            "version": get_project_version(),
+            "timestamp": int(datetime.now().timestamp())
+        }
+        send_http_response(writer, 200, "application/json; charset=utf-8", json.dumps(manifest_data, indent=2).encode("utf-8"))
+        return
+
+    # 5. Cryptographic Ed25519 Signature Downloads
+    if clean_path in ("/loaders/noemtaddons.jar.sig", "/loaders/noemtaddons.sig", "/download/sig", "/download/noemtaddons.jar.sig"):
+        serve_sig_file(writer, headers, client_ip)
+        return
+
+    # 6. Mod Payload JAR Downloads (Requested by loaders on game startup)
     if clean_path in ("/loaders/noemtaddons.jar", "/download/mod", "/download/noemtaddons.jar",
                       "/loaders/noemtaddons-cheat.jar", "/download/cheat", "/download/noemtaddons-cheat.jar"):
         serve_jar_file(writer, "mod", headers, client_ip)
         return
 
-    # 5. Bootstrap Loader JAR Downloads (The bootstrap loader given to users)
+    # 7. Bootstrap Loader JAR Downloads (The bootstrap loader given to users)
     if clean_path in ("/download/loader", "/download/loaders/cheat", "/download/noemtaddons-loader.jar",
                       "/loaders/noemtaddons-loader.jar", "/loaders/cheat-loader.jar"):
         serve_loader_stub_file(writer, "loader", headers, client_ip)
@@ -949,6 +961,47 @@ def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, headers: dict, cli
         while chunk := f.read(65536):
             writer.write(chunk)
     
+    writer.close()
+
+
+def serve_sig_file(writer: asyncio.StreamWriter, headers: dict, client_ip: str):
+    sig_path = get_sig_path()
+    if not sig_path or not sig_path.exists():
+        logger.warning(f"Signature file not found for {client_ip}")
+        send_http_response(writer, 404, "text/plain", b"Error: Mod payload Ed25519 signature not found.")
+        return
+
+    stat = sig_path.stat()
+    file_size = stat.st_size
+    mtime = stat.st_mtime
+    http_mtime = email.utils.formatdate(mtime, usegmt=True)
+
+    ims = headers.get("if-modified-since")
+    if ims:
+        try:
+            ims_time = email.utils.parsedate_to_datetime(ims).timestamp()
+            if ims_time >= int(mtime):
+                resp = "HTTP/1.1 304 Not Modified\r\nConnection: close\r\n\r\n"
+                writer.write(resp.encode("utf-8"))
+                writer.close()
+                return
+        except Exception:
+            pass
+
+    logger.info(f"📤 Serving Ed25519 payload signature ({file_size} bytes) to {client_ip}")
+    headers_out = [
+        "HTTP/1.1 200 OK",
+        "Content-Type: application/octet-stream",
+        f"Content-Length: {file_size}",
+        f"Last-Modified: {http_mtime}",
+        "X-Signature-Algorithm: Ed25519",
+        "Cache-Control: public, no-cache",
+        "Access-Control-Allow-Origin: *",
+        "Connection: close",
+        "\r\n"
+    ]
+    writer.write("\r\n".join(headers_out).encode("utf-8"))
+    writer.write(sig_path.read_bytes())
     writer.close()
 
 

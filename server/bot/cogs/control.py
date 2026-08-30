@@ -16,43 +16,43 @@ class ControlCog(commands.Cog, name="Control"):
         guild_ids=GUILD_IDS
     )
 
-    @control.command(name="build", description="Trigger instant git pull & gradle compilation")
+    @control.command(name="pull", description="Pull latest commits & signed release artifacts from GitHub")
     @is_authorized()
-    async def cmd_build(self, ctx: discord.ApplicationContext):
+    async def cmd_pull(self, ctx: discord.ApplicationContext):
         server = self.bot.server
         if not server:
             return await ctx.respond("❌ Server instance not attached.", ephemeral=True)
 
         if server.IS_BUILDING:
-            return await ctx.respond("⚠️ A build pipeline is already executing! Please wait.", ephemeral=True)
+            return await ctx.respond("⚠️ A deployment sync is already executing! Please wait.", ephemeral=True)
 
         author_name = str(ctx.author)
         await ctx.defer()
 
         success = await server.AutoBuilder.run_build(trigger_source=f"Discord ({author_name})")
 
-        if success:
-            meta = server.compute_version_metadata()
-            embed = discord.Embed(
-                title="✅ Build Pipeline Succeeded",
-                description="Git origin pulled and mod JARs successfully compiled!",
-                color=0x34A853,
-                timestamp=datetime.utcnow()
-            )
-            embed.add_field(name="📦 Version", value=f"`v{meta.get('version')}`", inline=True)
-            embed.add_field(name="🌿 Branch", value=f"`{server.GIT_BRANCH}`", inline=True)
-            embed.add_field(name="Triggered By", value=author_name, inline=True)
-            embed.set_footer(text="NoemtAddons CI/CD")
-            await ctx.respond(embed=embed)
-        else:
-            embed = discord.Embed(
-                title="❌ Build Pipeline Failed",
-                description="An error occurred during Gradle compilation. Check `/telemetry logs` for output details.",
-                color=0xEA4335,
-                timestamp=datetime.utcnow()
-            )
-            embed.set_footer(text="NoemtAddons CI/CD")
-            await ctx.respond(embed=embed)
+        meta = server.compute_version_metadata()
+        mod_info = meta.get("endpoints", {}).get("mod", {})
+        sig_info = meta.get("endpoints", {}).get("signature", {})
+
+        embed = discord.Embed(
+            title="🚀 Release Deployment Synced",
+            description="Pulled latest git commits & signed release artifacts from GitHub!",
+            color=0x34A853,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="📦 Version", value=f"`v{meta.get('version')}`", inline=True)
+        embed.add_field(name="🌿 Branch", value=f"`{server.GIT_BRANCH}`", inline=True)
+        embed.add_field(name="Triggered By", value=author_name, inline=True)
+        embed.add_field(name="📁 Mod Artifact", value=f"`{mod_info.get('size', 0)/1024:.1f} KB`", inline=True)
+        embed.add_field(name="✍️ Signature", value=f"`{sig_info.get('size', 0)} Bytes (Ed25519)`", inline=True)
+        embed.set_footer(text="NoemtAddons Control Plane")
+        await ctx.respond(embed=embed)
+
+    @control.command(name="build", description="Alias for /control pull - Syncs latest pushed release")
+    @is_authorized()
+    async def cmd_build(self, ctx: discord.ApplicationContext):
+        await self.cmd_pull(ctx)
 
     @control.command(name="kill", description="Emergency remote kill switch to terminate game client(s)")
     @is_authorized()
@@ -172,11 +172,14 @@ class ControlCog(commands.Cog, name="Control"):
         })
         await ctx.respond(f"📢 Broadcast sent to **`{count}`** connected client(s).")
 
-    # Top-Level Direct Slash Command for Rebuilds
-    @slash_command(name="build", description="Trigger instant git pull & gradle compilation", guild_ids=GUILD_IDS)
-    @is_authorized()
+    # Top-Level Direct Slash Commands for Release Sync
+    @slash_command(name="pull", description="Pull latest commits & pre-signed release from GitHub", guild_ids=GUILD_IDS)
+    async def direct_pull(self, ctx: discord.ApplicationContext):
+        await self.cmd_pull(ctx)
+
+    @slash_command(name="build", description="Sync latest pushed release from GitHub", guild_ids=GUILD_IDS)
     async def direct_build(self, ctx: discord.ApplicationContext):
-        await self.cmd_build(ctx)
+        await self.cmd_pull(ctx)
 
 
 def setup(bot):

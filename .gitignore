@@ -50,6 +50,9 @@ server/server_auth.json
 .env
 *.env
 server/.env
+keys/
+*.key
+*.pem
 
 # Python
 __pycache__/

@@ -139,9 +139,62 @@ tasks.jar {
 	enabled = false
 }
 
+tasks.register('signPayload') {
+	group = "build"
+	description = "Cryptographically signs the shadow JAR payload using the offline Ed25519 private key."
+	dependsOn tasks.shadowJar
+
+	doLast {
+		def privKeyFile = file("keys/ed25519_private.key")
+		if (!privKeyFile.exists()) {
+			logger.warn("⚠️ Private key 'keys/ed25519_private.key' not found. Run 'java scripts/Signer.java generate-keys' to create one.")
+			return
+		}
+
+		def jarFile = tasks.shadowJar.archiveFile.get().asFile
+		def sigFile = file("${jarFile.absolutePath}.sig")
+
+		byte[] jarBytes = jarFile.bytes
+		byte[] privBytes = privKeyFile.bytes
+
+		def spec = new java.security.spec.PKCS8EncodedKeySpec(privBytes)
+		def kf = java.security.KeyFactory.getInstance("Ed25519")
+		def privateKey = kf.generatePrivate(spec)
+
+		def sig = java.security.Signature.getInstance("Ed25519")
+		sig.initSign(privateKey)
+		sig.update(jarBytes)
+		byte[] signatureBytes = sig.sign()
+
+		sigFile.bytes = signatureBytes
+		println "✍️ [signPayload] Cryptographically signed ${jarFile.name} -> ${sigFile.name} (${signatureBytes.length} bytes Ed25519)"
+
+		// Copy release artifacts into server/jars/ for git tracking and instant remote pull
+		def serverJarsDir = file("server/jars")
+		serverJarsDir.mkdirs()
+		copy {
+			from jarFile
+			into serverJarsDir
+			rename { "noemtaddons.jar" }
+		}
+		copy {
+			from sigFile
+			into serverJarsDir
+			rename { "noemtaddons.jar.sig" }
+		}
+		copy {
+			from tasks.loaderJar.archiveFile.get().asFile
+			into serverJarsDir
+			rename { "noemtaddons-loader.jar" }
+		}
+		println "📦 [signPayload] Copied release artifacts to server/jars/ (Ready for git push)"
+	}
+}
+
 tasks.assemble {
 	dependsOn tasks.shadowJar
 	dependsOn loaderJar
+	finalizedBy tasks.signPayload
 }
 
 publishing {
