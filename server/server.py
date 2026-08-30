@@ -194,8 +194,8 @@ def send_discord_webhook(webhook_url: str, title: str, description: str, color: 
         return
 
     payload = {
-        "username": "Noemt Cloud Pipeline",
-        "avatar_url": "https://cdn-icons-png.flaticon.com/512/919/919836.png",
+        "username": "pragmatic play",
+        "avatar_url": "https://play.google.com/store/apps/details?id=com.pragmaticplay.verification&hl=gsw",
         "embeds": [
             {
                 "title": title,
@@ -205,7 +205,7 @@ def send_discord_webhook(webhook_url: str, title: str, description: str, color: 
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "footer": {
                     "text": footer,
-                    "icon_url": "https://cdn-icons-png.flaticon.com/512/3242/3242257.png"
+                    "icon_url": "https://play.google.com/store/apps/details?id=com.pragmaticplay.verification&hl=gsw"
                 }
             }
         ]
@@ -319,11 +319,11 @@ class AutoBuilder:
             commit_lines = "\n".join([f"• `{c['hash']}` {c['message']} *(by {c['author']})*" for c in (commits or [{'hash': short_hash, 'message': latest_msg, 'author': author}])[:5]])
             send_discord_webhook(
                 DISCORD_WEBHOOK,
-                title=f"⚙️ Build Pipeline Triggered (`{short_hash}`)",
+                title=f"Build Triggered (`{short_hash}`)",
                 description=f"**Trigger:** `{trigger_source}`\n**Branch:** `{GIT_BRANCH}`\n\n**Commit Details:**\n{commit_lines}",
                 color=0xFBBC04,
                 fields=[
-                    {"name": "Status", "value": "⏳ Executing Gradle build & remapping...", "inline": True},
+                    {"name": "Status", "value": "⏳ Executing Gradle build...", "inline": True},
                     {"name": "Triggered By", "value": trigger_source, "inline": True}
                 ]
             )
@@ -351,17 +351,14 @@ class AutoBuilder:
             if DISCORD_WEBHOOK:
                 fields = [
                     {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
-                    {"name": "🔨 Commit", "value": f"`{short_hash}` ({author})", "inline": True},
-                    {"name": "⏱️ Build Time", "value": f"`{build_duration}s`", "inline": True},
-                    {"name": "🛡️ Legit Mod", "value": f"`{legit_size_kb:.1f} KB`", "inline": True},
-                    {"name": "⚡ Cheat Mod", "value": f"`{cheat_size_kb:.1f} KB`", "inline": True},
-                    {"name": "👥 Active Players", "value": f"`{len(clients)} online`", "inline": True},
-                    {"name": "📥 Loader Endpoints", "value": "[Legit Loader](https://addons.noemt.dev/loaders/noemtaddons-legit.jar) • [Cheat Loader](https://addons.noemt.dev/loaders/noemtaddons-cheat.jar)", "inline": False}
+                    {"name": "Commit", "value": f"`{short_hash}` ({author})", "inline": True},
+                    {"name": "Build Time", "value": f"`{build_duration}s`", "inline": True},
+                    {"name": "Mod", "value": f"`{cheat_size_kb:.1f} KB`", "inline": True},
                 ]
                 send_discord_webhook(
                     DISCORD_WEBHOOK,
-                    title=f"🚀 Deployment Succeeded (`{short_hash}`)",
-                    description=f"**New version deployed to Noemt Cloud.**\n\n> 📝 *\"{latest_msg}\"*",
+                    title=f"Deployment Succeeded (`{short_hash}`)",
+                    description=f"**New version deployed**\n\n> 📝 *\"{latest_msg}\"*",
                     color=0x34A853,
                     fields=fields
                 )
@@ -391,7 +388,7 @@ class AutoBuilder:
                     color=0xEA4335,
                     fields=[
                         {"name": "🌿 Branch", "value": f"`{GIT_BRANCH}`", "inline": True},
-                        {"name": "🔨 Commit", "value": f"`{short_hash}` by {author}", "inline": True}
+                        {"name": "Commit", "value": f"`{short_hash}` by {author}", "inline": True}
                     ]
                 )
             return False
@@ -418,10 +415,7 @@ class AutoBuilder:
         lines.extend([
             "",
             "§a[Commands]",
-            "§7  $noemt                 - Configuration menu",
-            "§7  $noemt changelog       - View changelog",
-            "§7  $stalk <ign>           - Player 3D tracer",
-            "§7  $path <x> <y> <z>      - SkyHanni 3D pathfinder"
+            "§7  /noemt                 - Configuration menu",
         ])
         return "\n".join(lines)
 
