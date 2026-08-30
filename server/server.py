@@ -41,6 +41,8 @@ WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 # Paths & Config
 REPO_DIR: Path = Path(__file__).parent.parent
 JARS_DIR: Path = REPO_DIR / "build" / "libs"
+WEB_DIST_DIR: Path = REPO_DIR / "web" / "dist"
+WEB_PUBLIC_DIR: Path = REPO_DIR / "web" / "public"
 DB_PATH: Path = Path(__file__).parent / "server.db"
 DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
@@ -766,7 +768,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         serve_loader_stub_file(writer, "loader", headers, client_ip)
         return
 
-    # 6. Initial Registration (First-time setup - strictly single-use ever)
+    # 8. Initial Operator Registration (First-time setup - strictly single-use ever)
     if clean_path == "/register":
         if has_admin_user():
             if method == "POST":
@@ -800,7 +802,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
             logger.info(f"🎉 Initial Operator account successfully created: '{username}' from {client_ip}")
             headers_out = [
                 "HTTP/1.1 302 Found",
-                "Location: /",
+                "Location: /admin",
                 f"Set-Cookie: noemt_session={session_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
                 "Connection: close",
                 "\r\n"
@@ -813,47 +815,49 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
             send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
             return
 
-    # If no admin account exists yet, automatically route any UI request to /register
-    if not has_admin_user() and clean_path in ("/", "/dashboard", "/login"):
-        if method == "GET":
-            html = render_register_page()
-            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
-            return
-
-    # 7. Login POST Request
-    if method == "POST" and clean_path == "/login":
+    # 9. Login POST / GET Request
+    if clean_path == "/login":
         if not has_admin_user():
-            headers_out = ["HTTP/1.1 302 Found", "Location: /register", "Connection: close", "\r\n"]
-            writer.write("\r\n".join(headers_out).encode("utf-8"))
-            writer.close()
+            html = render_register_page()
+            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
             return
 
-        content_len = int(headers.get("content-length", 0))
-        body = (await reader.readexactly(content_len)).decode("utf-8", errors="ignore") if content_len > 0 else ""
-        form_data = urllib.parse.parse_qs(body)
-        username = form_data.get("username", [""])[0].strip()
-        password = form_data.get("password", [""])[0].strip()
+        if method == "POST":
+            content_len = int(headers.get("content-length", 0))
+            body = (await reader.readexactly(content_len)).decode("utf-8", errors="ignore") if content_len > 0 else ""
+            form_data = urllib.parse.parse_qs(body)
+            username = form_data.get("username", [""])[0].strip()
+            password = form_data.get("password", [""])[0].strip()
 
-        if verify_login(username, password):
-            session_token = create_session(username)
-            logger.info(f"🔑 Successful Google Cloud console login for '{username}' from {client_ip}")
-            headers_out = [
-                "HTTP/1.1 302 Found",
-                "Location: /",
-                f"Set-Cookie: noemt_session={session_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
-                "Connection: close",
-                "\r\n"
-            ]
-            writer.write("\r\n".join(headers_out).encode("utf-8"))
-            writer.close()
-            return
+            if verify_login(username, password):
+                session_token = create_session(username)
+                logger.info(f"🔑 Successful operator console login for '{username}' from {client_ip}")
+                headers_out = [
+                    "HTTP/1.1 302 Found",
+                    "Location: /admin",
+                    f"Set-Cookie: noemt_session={session_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800",
+                    "Connection: close",
+                    "\r\n"
+                ]
+                writer.write("\r\n".join(headers_out).encode("utf-8"))
+                writer.close()
+                return
+            else:
+                logger.warning(f"🚫 Failed login attempt from {client_ip} (user: '{username}')")
+                html = render_login_page(error="Invalid credentials. Verify your Operator ID and Password.")
+                send_http_response(writer, 401, "text/html; charset=utf-8", html.encode("utf-8"))
+                return
         else:
-            logger.warning(f"🚫 Failed login attempt from {client_ip} (user: '{username}')")
-            html = render_login_page(error="Invalid credentials. Verify your Operator ID and Password.")
-            send_http_response(writer, 401, "text/html; charset=utf-8", html.encode("utf-8"))
+            if is_authenticated(headers):
+                headers_out = ["HTTP/1.1 302 Found", "Location: /admin", "Connection: close", "\r\n"]
+                writer.write("\r\n".join(headers_out).encode("utf-8"))
+                writer.close()
+                return
+            html = render_login_page()
+            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
             return
 
-    # 8. Logout GET
+    # 10. Logout GET
     if clean_path == "/logout":
         destroy_session(headers)
         headers_out = [
@@ -867,7 +871,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         writer.close()
         return
 
-    # 9. Authenticated Dashboard Remote Action POST
+    # 11. Authenticated Dashboard Remote Action POST
     if method == "POST" and clean_path == "/api/action":
         current_user = get_authenticated_user(headers)
         if not current_user:
@@ -892,13 +896,13 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         elif action == "chat" and text:
             await send_to_target(target, {"type": "CHAT", "text": text})
 
-        headers_out = ["HTTP/1.1 302 Found", "Location: /", "Connection: close", "\r\n"]
+        headers_out = ["HTTP/1.1 302 Found", "Location: /admin", "Connection: close", "\r\n"]
         writer.write("\r\n".join(headers_out).encode("utf-8"))
         writer.close()
         return
 
-    # 10. Dashboard GET Route (Protected)
-    if clean_path in ("/", "/dashboard"):
+    # 12. Operator Admin Dashboard GET Route (/admin, /dashboard)
+    if clean_path in ("/admin", "/dashboard"):
         if not has_admin_user():
             html = render_register_page()
             send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
@@ -912,21 +916,138 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
         return
 
-    if clean_path == "/login":
-        if not has_admin_user():
-            html = render_register_page()
-            send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
+    # 13. Public React Frontend Landing Page (Served at /)
+    if clean_path == "/":
+        index_file = WEB_DIST_DIR / "index.html"
+        if index_file.exists():
+            serve_static_file(writer, index_file, headers, client_ip)
             return
-        if is_authenticated(headers):
-            headers_out = ["HTTP/1.1 302 Found", "Location: /", "Connection: close", "\r\n"]
-            writer.write("\r\n".join(headers_out).encode("utf-8"))
-            writer.close()
+        else:
+            # Fallback if frontend build not generated yet
+            send_http_response(writer, 200, "text/html; charset=utf-8", b"<h1>NoemtAddons React Frontend Building...</h1>")
             return
-        html = render_login_page()
-        send_http_response(writer, 200, "text/html; charset=utf-8", html.encode("utf-8"))
-        return
+
+    # 14. Static Assets & Media (from web/dist or web/public)
+    if clean_path.startswith(("/assets/", "/media/")) or clean_path in ("/favicon.ico", "/robots.txt", "/preview-banner.png"):
+        rel_path = clean_path.lstrip("/")
+        candidate = WEB_DIST_DIR / rel_path
+        if not candidate.exists():
+            candidate = WEB_PUBLIC_DIR / rel_path
+        if candidate.exists() and candidate.is_file():
+            serve_static_file(writer, candidate, headers, client_ip)
+            return
+
+    # 15. SPA Client-Side Routing Fallback (for any non-API GET request)
+    if method == "GET":
+        rel_path = clean_path.lstrip("/")
+        candidate = WEB_DIST_DIR / rel_path
+        if candidate.exists() and candidate.is_file():
+            serve_static_file(writer, candidate, headers, client_ip)
+            return
+        index_file = WEB_DIST_DIR / "index.html"
+        if index_file.exists():
+            serve_static_file(writer, index_file, headers, client_ip)
+            return
 
     send_http_response(writer, 404, "text/plain", b"404 Not Found")
+
+
+def serve_static_file(writer: asyncio.StreamWriter, file_path: Path, headers: dict, client_ip: str):
+    if not file_path.exists() or not file_path.is_file():
+        send_http_response(writer, 404, "text/plain", b"404 Not Found")
+        return
+
+    ext = file_path.suffix.lower()
+    mime_types = {
+        ".html": "text/html; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".mjs": "text/javascript; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".woff2": "font/woff2",
+        ".woff": "font/woff",
+        ".ttf": "font/ttf",
+        ".txt": "text/plain; charset=utf-8",
+    }
+    content_type = mime_types.get(ext, "application/octet-stream")
+    file_size = file_path.stat().st_size
+    mtime = file_path.stat().st_mtime
+    http_mtime = email.utils.formatdate(mtime, usegmt=True)
+
+    # HTTP Range Header Handling (Optimized for smooth video playback & seeking)
+    range_header = headers.get("range")
+    if range_header and range_header.startswith("bytes="):
+        try:
+            byte_range = range_header.split("=")[1].strip()
+            parts = byte_range.split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+
+            if start >= file_size:
+                headers_out = [
+                    "HTTP/1.1 416 Range Not Satisfiable",
+                    f"Content-Range: bytes */{file_size}",
+                    "Connection: close",
+                    "\r\n"
+                ]
+                writer.write("\r\n".join(headers_out).encode("utf-8"))
+                writer.close()
+                return
+
+            end = min(end, file_size - 1)
+            chunk_length = (end - start) + 1
+
+            headers_out = [
+                "HTTP/1.1 206 Partial Content",
+                f"Content-Type: {content_type}",
+                f"Content-Length: {chunk_length}",
+                f"Content-Range: bytes {start}-{end}/{file_size}",
+                "Accept-Ranges: bytes",
+                f"Last-Modified: {http_mtime}",
+                "Access-Control-Allow-Origin: *",
+                "Connection: close",
+                "\r\n"
+            ]
+            writer.write("\r\n".join(headers_out).encode("utf-8"))
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                remaining = chunk_length
+                while remaining > 0:
+                    read_size = min(65536, remaining)
+                    chunk = f.read(read_size)
+                    if not chunk:
+                        break
+                    writer.write(chunk)
+                    remaining -= len(chunk)
+            writer.close()
+            return
+        except Exception as err:
+            logger.warning(f"Static Range handling error: {err}")
+
+    # Full Static File Response
+    headers_out = [
+        "HTTP/1.1 200 OK",
+        f"Content-Type: {content_type}",
+        f"Content-Length: {file_size}",
+        f"Last-Modified: {http_mtime}",
+        "Accept-Ranges: bytes",
+        "Cache-Control: public, max-age=3600" if ext != ".html" else "no-cache",
+        "Access-Control-Allow-Origin: *",
+        "Connection: close",
+        "\r\n"
+    ]
+    writer.write("\r\n".join(headers_out).encode("utf-8"))
+    with open(file_path, "rb") as f:
+        while chunk := f.read(65536):
+            writer.write(chunk)
+    writer.close()
 
 
 def serve_jar_file(writer: asyncio.StreamWriter, flavor: str, headers: dict, client_ip: str):
@@ -1093,163 +1214,150 @@ def send_http_response(writer: asyncio.StreamWriter, status_code: int, content_t
 # ==============================================================================
 
 def render_register_page(error: Optional[str] = None) -> str:
-    error_html = f'<div class="google-alert-error"><span>⚠️</span> {error}</div>' if error else ""
+    error_html = f'<div class="alert-error"><span>⚠️</span> {error}</div>' if error else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Initial Setup - Noemt Cloud Console</title>
+    <title>Initial Setup • NoemtAddons Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --google-blue: #8ab4f8;
-            --google-blue-hover: #aecbfa;
-            --google-bg: #131314;
-            --google-surface: #1e1f20;
-            --google-surface-variant: #28292a;
-            --google-border: #444746;
-            --google-text: #e3e3e3;
-            --google-text-secondary: #c4c7c5;
-            --google-red: #f28b82;
-            --google-green: #81c995;
+            --bg-base: #121212;
+            --bg-surface: #181818;
+            --bg-input: #1E1E1E;
+            --border-color: #262626;
+            --border-focus: #1A73E8;
+            --text-primary: #EEEEEE;
+            --text-secondary: #9E9E9E;
+            --accent-blue: #1A73E8;
+            --accent-blue-hover: #1557B0;
+            --accent-red: #F28B82;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            background: var(--google-bg);
-            color: var(--google-text);
-            font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
         }}
-        .google-card {{
+        .auth-container {{
             width: 100%;
-            max-width: 460px;
-            background: var(--google-surface);
-            border: 1px solid var(--google-border);
-            border-radius: 28px;
-            padding: 40px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            max-width: 420px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 36px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }}
-        .google-logo-row {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
+        .brand-header {{
+            margin-bottom: 24px;
         }}
-        .google-logo {{
-            width: 32px;
-            height: 32px;
+        .brand-title {{
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
         }}
-        .google-title {{
-            font-size: 24px;
-            font-weight: 400;
-            color: var(--google-text);
-            margin-bottom: 8px;
-        }}
-        .google-subtitle {{
-            font-size: 14px;
-            color: var(--google-text-secondary);
-            margin-bottom: 20px;
+        .brand-title .white {{ color: #FFFFFF; }}
+        .brand-title .blue {{ color: var(--accent-blue); }}
+        .brand-subtitle {{
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
         }}
         .setup-notice {{
-            background: rgba(138, 180, 248, 0.08);
-            border: 1px solid rgba(138, 180, 248, 0.25);
-            color: var(--google-blue);
-            padding: 12px 16px;
+            background: rgba(26, 115, 232, 0.08);
+            border: 1px solid rgba(26, 115, 232, 0.25);
+            color: #8AB4F8;
+            padding: 12px 14px;
             border-radius: 12px;
             font-size: 12px;
             line-height: 1.5;
             margin-bottom: 20px;
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
         }}
-        .google-alert-error {{
+        .alert-error {{
             background: rgba(242, 139, 130, 0.12);
             border: 1px solid rgba(242, 139, 130, 0.3);
-            color: var(--google-red);
-            padding: 12px 16px;
+            color: var(--accent-red);
+            padding: 10px 14px;
             border-radius: 8px;
-            font-size: 13px;
-            margin-bottom: 20px;
+            font-size: 12px;
+            margin-bottom: 16px;
             display: flex;
             align-items: center;
             gap: 8px;
         }}
         .form-group {{
-            margin-bottom: 18px;
+            margin-bottom: 16px;
         }}
         .input-label {{
             display: block;
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--google-text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             margin-bottom: 6px;
         }}
-        .google-input {{
+        .dark-input {{
             width: 100%;
-            background: var(--google-bg);
-            border: 1px solid var(--google-border);
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            padding: 14px 16px;
-            color: var(--google-text);
-            font-size: 14px;
-            font-family: 'Roboto', sans-serif;
-            transition: all 0.2s ease;
+            padding: 11px 14px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: inherit;
+            transition: border-color 0.15s ease;
         }}
-        .google-input:focus {{
+        .dark-input:focus {{
             outline: none;
-            border-color: var(--google-blue);
-            box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+            border-color: var(--border-focus);
         }}
-        .google-btn {{
+        .btn-submit {{
             width: 100%;
-            background: var(--google-blue);
-            color: #040c17;
+            background: var(--accent-blue);
+            color: #FFFFFF;
             border: none;
-            border-radius: 20px;
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: 500;
-            font-family: 'Google Sans', sans-serif;
+            border-radius: 9999px;
+            padding: 11px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.2s ease;
-            margin-top: 12px;
+            transition: all 0.15s ease;
+            margin-top: 8px;
         }}
-        .google-btn:hover {{
-            background: var(--google-blue-hover);
+        .btn-submit:hover {{
+            background: var(--accent-blue-hover);
         }}
-        .google-footer-text {{
-            margin-top: 24px;
+        .footer-note {{
+            margin-top: 20px;
             text-align: center;
-            font-size: 12px;
-            color: var(--google-text-secondary);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
         }}
     </style>
 </head>
 <body>
-    <div class="google-card">
-        <div class="google-logo-row">
-            <svg class="google-logo" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span style="font-weight: 500; font-size: 18px; letter-spacing: -0.2px;">Noemt Cloud</span>
+    <div class="auth-container">
+        <div class="brand-header">
+            <div class="brand-title">
+                <span class="white">Noemt</span><span class="blue">Addons</span>
+            </div>
+            <div class="brand-subtitle">Initial Operator Registration</div>
         </div>
-        <h1 class="google-title">Initial Setup</h1>
-        <p class="google-subtitle">Create your Operator Account (One-Time Setup)</p>
         
         <div class="setup-notice">
-            <span>🛡️</span>
-            <div><strong>First-Time Setup:</strong> Registration will be permanently locked after you create this account. Credentials will be securely hashed with PBKDF2 in SQLite.</div>
+            <strong>One-Time Setup:</strong> Registration permanently locks after creating this operator account.
         </div>
 
         {error_html}
@@ -1257,20 +1365,20 @@ def render_register_page(error: Optional[str] = None) -> str:
         <form method="POST" action="/register">
             <div class="form-group">
                 <label class="input-label">Operator Username</label>
-                <input type="text" name="username" class="google-input" placeholder="e.g. nom" minlength="3" required autofocus>
+                <input type="text" name="username" class="dark-input" placeholder="e.g. nom" minlength="3" required autofocus>
             </div>
             <div class="form-group">
                 <label class="input-label">Master Password</label>
-                <input type="password" name="password" class="google-input" placeholder="Min. 6 characters" minlength="6" required>
+                <input type="password" name="password" class="dark-input" placeholder="Min. 6 characters" minlength="6" required>
             </div>
             <div class="form-group">
                 <label class="input-label">Confirm Password</label>
-                <input type="password" name="confirm_password" class="google-input" placeholder="Re-enter password" minlength="6" required>
+                <input type="password" name="confirm_password" class="dark-input" placeholder="Re-enter password" minlength="6" required>
             </div>
-            <button type="submit" class="google-btn">Create Account & Enter Console →</button>
+            <button type="submit" class="btn-submit">Create Operator Account →</button>
         </form>
-        <div class="google-footer-text">
-            Protected by Noemt Cloud SQLite Identity Storage
+        <div class="footer-note">
+            SQLite PBKDF2 Identity Vault
         </div>
     </div>
 </body>
@@ -1278,159 +1386,153 @@ def render_register_page(error: Optional[str] = None) -> str:
 
 
 def render_login_page(error: Optional[str] = None) -> str:
-    error_html = f'<div class="google-alert-error"><span>⚠️</span> {error}</div>' if error else ""
+    error_html = f'<div class="alert-error"><span>⚠️</span> {error}</div>' if error else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Sign in - Noemt Cloud Accounts</title>
+    <title>Sign in • NoemtAddons Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --google-blue: #8ab4f8;
-            --google-blue-hover: #aecbfa;
-            --google-bg: #131314;
-            --google-surface: #1e1f20;
-            --google-surface-variant: #28292a;
-            --google-border: #444746;
-            --google-text: #e3e3e3;
-            --google-text-secondary: #c4c7c5;
-            --google-red: #f28b82;
+            --bg-base: #121212;
+            --bg-surface: #181818;
+            --bg-input: #1E1E1E;
+            --border-color: #262626;
+            --border-focus: #1A73E8;
+            --text-primary: #EEEEEE;
+            --text-secondary: #9E9E9E;
+            --accent-blue: #1A73E8;
+            --accent-blue-hover: #1557B0;
+            --accent-red: #F28B82;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            background: var(--google-bg);
-            color: var(--google-text);
-            font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 24px;
         }}
-        .google-card {{
+        .auth-container {{
             width: 100%;
-            max-width: 440px;
-            background: var(--google-surface);
-            border: 1px solid var(--google-border);
-            border-radius: 28px;
-            padding: 40px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            max-width: 400px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 36px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }}
-        .google-logo-row {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 16px;
+        .brand-header {{
+            margin-bottom: 24px;
         }}
-        .google-logo {{
-            width: 32px;
-            height: 32px;
+        .brand-title {{
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.3px;
         }}
-        .google-title {{
-            font-size: 24px;
-            font-weight: 400;
-            color: var(--google-text);
-            margin-bottom: 8px;
+        .brand-title .white {{ color: #FFFFFF; }}
+        .brand-title .blue {{ color: var(--accent-blue); }}
+        .brand-subtitle {{
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
         }}
-        .google-subtitle {{
-            font-size: 14px;
-            color: var(--google-text-secondary);
-            margin-bottom: 28px;
-        }}
-        .google-alert-error {{
+        .alert-error {{
             background: rgba(242, 139, 130, 0.12);
             border: 1px solid rgba(242, 139, 130, 0.3);
-            color: var(--google-red);
-            padding: 12px 16px;
+            color: var(--accent-red);
+            padding: 10px 14px;
             border-radius: 8px;
-            font-size: 13px;
-            margin-bottom: 20px;
+            font-size: 12px;
+            margin-bottom: 16px;
             display: flex;
             align-items: center;
             gap: 8px;
         }}
         .form-group {{
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }}
         .input-label {{
             display: block;
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--google-text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             margin-bottom: 6px;
         }}
-        .google-input {{
+        .dark-input {{
             width: 100%;
-            background: var(--google-bg);
-            border: 1px solid var(--google-border);
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
-            padding: 14px 16px;
-            color: var(--google-text);
-            font-size: 14px;
-            font-family: 'Roboto', sans-serif;
-            transition: all 0.2s ease;
+            padding: 11px 14px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: inherit;
+            transition: border-color 0.15s ease;
         }}
-        .google-input:focus {{
+        .dark-input:focus {{
             outline: none;
-            border-color: var(--google-blue);
-            box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+            border-color: var(--border-focus);
         }}
-        .google-btn {{
+        .btn-submit {{
             width: 100%;
-            background: var(--google-blue);
-            color: #040c17;
+            background: var(--accent-blue);
+            color: #FFFFFF;
             border: none;
-            border-radius: 20px;
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: 500;
-            font-family: 'Google Sans', sans-serif;
+            border-radius: 9999px;
+            padding: 11px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.2s ease;
-            margin-top: 12px;
+            transition: all 0.15s ease;
+            margin-top: 8px;
         }}
-        .google-btn:hover {{
-            background: var(--google-blue-hover);
+        .btn-submit:hover {{
+            background: var(--accent-blue-hover);
         }}
-        .google-footer-text {{
-            margin-top: 24px;
+        .footer-note {{
+            margin-top: 20px;
             text-align: center;
-            font-size: 12px;
-            color: var(--google-text-secondary);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
         }}
     </style>
 </head>
 <body>
-    <div class="google-card">
-        <div class="google-logo-row">
-            <svg class="google-logo" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span style="font-weight: 500; font-size: 18px; letter-spacing: -0.2px;">Noemt Cloud</span>
+    <div class="auth-container">
+        <div class="brand-header">
+            <div class="brand-title">
+                <span class="white">Noemt</span><span class="blue">Addons</span>
+            </div>
+            <div class="brand-subtitle">Operator Console Sign-In</div>
         </div>
-        <h1 class="google-title">Sign in</h1>
-        <p class="google-subtitle">Use your Noemt Operator Account</p>
+
         {error_html}
+
         <form method="POST" action="/login">
             <div class="form-group">
                 <label class="input-label">Operator ID</label>
-                <input type="text" name="username" class="google-input" placeholder="Operator username" required autofocus>
+                <input type="text" name="username" class="dark-input" placeholder="Operator username" required autofocus>
             </div>
             <div class="form-group">
                 <label class="input-label">Password</label>
-                <input type="password" name="password" class="google-input" placeholder="Operator password" required>
+                <input type="password" name="password" class="dark-input" placeholder="Operator password" required>
             </div>
-            <button type="submit" class="google-btn">Sign in to Console →</button>
+            <button type="submit" class="btn-submit">Sign In to Console →</button>
         </form>
-        <div class="google-footer-text">
-            Protected by Noemt Cloud Identity Services
+        <div class="footer-note">
+            NoemtAddons Control Plane
         </div>
     </div>
 </body>
@@ -1448,432 +1550,418 @@ def render_dashboard_page(current_user: str = "nom") -> str:
             player_rows += f"""
             <tr>
                 <td>
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <div class="avatar-chip">{name[:1].upper()}</div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div class="player-avatar">{name[:1].upper()}</div>
                         <div>
-                            <div style="font-weight:500; color:var(--google-text);">{name}</div>
-                            <div style="font-size:11px; font-family:'Roboto Mono',monospace; color:var(--google-text-secondary);">{info['uuid'][:12]}...</div>
+                            <div style="font-weight:600; color:var(--text-primary);">{name}</div>
+                            <div style="font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-secondary);">{info['uuid'][:12]}...</div>
                         </div>
                     </div>
                 </td>
-                <td><span class="status-pill status-healthy"><span class="pulse-dot"></span> RUNNING</span></td>
-                <td><code>{info['ip']}</code></td>
-                <td><span class="badge-chip">v{info['version']}</span></td>
-                <td style="color:var(--google-text-secondary); font-size:12px;">{info['connected_at']}</td>
+                <td><span class="status-pill status-online"><span class="pulse-dot"></span> Online</span></td>
+                <td><code class="code-badge">{info['ip']}</code></td>
+                <td><span class="version-chip">v{info['version']}</span></td>
+                <td style="color:var(--text-secondary); font-size:12px; font-family:'JetBrains Mono',monospace;">{info['connected_at']}</td>
                 <td style="text-align:right;">
                     <form method="POST" action="/api/action" style="display:inline;" onsubmit="return confirm('Emergency close Minecraft for {name}?');">
                         <input type="hidden" name="action" value="kill">
                         <input type="hidden" name="target" value="{name}">
-                        <button type="submit" class="google-btn-danger-sm">⛔ Close Game</button>
+                        <button type="submit" class="btn-danger-sm">Close Game</button>
                     </form>
                 </td>
             </tr>
             """
     else:
-        player_rows = '<tr><td colspan="6" style="text-align:center; padding: 48px 16px; color: var(--google-text-secondary);"><div style="font-size:28px; margin-bottom:8px;">🎮</div><div style="font-size:14px; font-weight:500;">No Active Client Instances Connected</div><div style="font-size:12px; margin-top:4px; opacity:0.8;">Launch Minecraft with NoemtAddons to establish live WebSocket telemetry link.</div></td></tr>'
+        player_rows = '<tr><td colspan="6" style="text-align:center; padding: 40px 16px; color: var(--text-secondary);"><div style="font-size:13px; font-weight:500;">No Active Client Instances Connected</div><div style="font-size:11px; color:#666666; margin-top:4px;">Launch Minecraft with NoemtAddons to establish live WebSocket link.</div></td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Google Cloud Console • NoemtAddons Control Plane</title>
+    <title>NoemtAddons • Operator Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --google-blue: #8ab4f8;
-            --google-blue-container: #1b3a57;
-            --google-green: #81c995;
-            --google-yellow: #fdd663;
-            --google-red: #f28b82;
-            --google-bg: #131314;
-            --google-surface: #1e1f20;
-            --google-surface-variant: #28292a;
-            --google-surface-hover: #323335;
-            --google-border: #444746;
-            --google-border-subtle: rgba(255, 255, 255, 0.08);
-            --google-text: #e3e3e3;
-            --google-text-secondary: #c4c7c5;
+            --bg-base: #121212;
+            --bg-surface: #181818;
+            --bg-elevated: #1E1E1E;
+            --bg-input: #1E1E1E;
+            --border-color: #262626;
+            --border-subtle: #1F1F1F;
+            --text-primary: #EEEEEE;
+            --text-secondary: #9E9E9E;
+            --accent-blue: #1A73E8;
+            --accent-blue-hover: #1557B0;
+            --accent-blue-light: #8AB4F8;
+            --accent-red: #E63946;
+            --accent-green: #34D399;
         }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            background: var(--google-bg);
-            color: var(--google-text);
-            font-family: 'Google Sans', 'Roboto', -apple-system, sans-serif;
+            background: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', sans-serif;
             min-height: 100vh;
             -webkit-font-smoothing: antialiased;
         }}
-        /* Google Cloud Top Bar */
-        .google-app-bar {{
-            height: 52px;
-            background: var(--google-surface);
-            border-bottom: 1px solid var(--google-border);
+        /* Top Navigation Bar */
+        .top-navbar {{
+            height: 56px;
+            background: rgba(18, 18, 18, 0.95);
+            border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 20px;
+            padding: 0 24px;
             position: sticky;
             top: 0;
             z-index: 100;
             backdrop-filter: blur(12px);
         }}
-        .bar-left {{
+        .nav-left {{
             display: flex;
             align-items: center;
             gap: 16px;
         }}
-        .bar-brand {{
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 15px;
-            font-weight: 500;
-            color: var(--google-text);
+        .brand-link {{
+            font-size: 16px;
+            font-weight: 700;
             text-decoration: none;
-            letter-spacing: -0.2px;
+            letter-spacing: -0.3px;
         }}
-        .project-selector {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: var(--google-surface-variant);
-            border: 1px solid var(--google-border);
-            border-radius: 8px;
-            padding: 5px 12px;
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--google-text);
-            cursor: pointer;
-            transition: all 0.2s ease;
+        .brand-link .white {{ color: #FFFFFF; }}
+        .brand-link .blue {{ color: var(--accent-blue); }}
+        .brand-pill {{
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-secondary);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
+            border-radius: 9999px;
+            padding: 2px 8px;
         }}
-        .project-selector:hover {{
-            background: var(--google-surface-hover);
-            border-color: var(--google-blue);
-        }}
-        .bar-search {{
+        .nav-search {{
             flex: 1;
-            max-width: 480px;
-            margin: 0 24px;
+            max-width: 360px;
+            margin: 0 20px;
         }}
-        .search-box {{
+        .search-input {{
             width: 100%;
-            background: var(--google-bg);
-            border: 1px solid var(--google-border);
-            border-radius: 8px;
-            padding: 7px 14px;
-            color: var(--google-text);
-            font-size: 13px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 9999px;
+            padding: 6px 14px;
+            color: var(--text-primary);
+            font-size: 12px;
             font-family: inherit;
-            transition: border-color 0.2s ease;
+            transition: border-color 0.15s ease;
         }}
-        .search-box:focus {{
+        .search-input:focus {{
             outline: none;
-            border-color: var(--google-blue);
+            border-color: var(--accent-blue);
         }}
-        .bar-right {{
+        .nav-right {{
             display: flex;
             align-items: center;
             gap: 12px;
         }}
+        .user-chip {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }}
         .user-avatar {{
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #1a73e8, #4285f4);
+            background: var(--accent-blue);
             color: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 13px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            font-weight: 700;
+            font-size: 11px;
         }}
         /* Main Container */
         .container {{
-            max-width: 1320px;
+            max-width: 1180px;
             margin: 0 auto;
-            padding: 28px 24px;
+            padding: 32px 24px;
         }}
         .page-header {{
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
+            align-items: flex-end;
+            margin-bottom: 28px;
             flex-wrap: wrap;
             gap: 16px;
         }}
         .page-title h1 {{
             font-size: 24px;
-            font-weight: 500;
-            letter-spacing: -0.3px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
         }}
         .page-title p {{
             font-size: 13px;
-            color: var(--google-text-secondary);
+            color: var(--text-secondary);
             margin-top: 4px;
         }}
-        .action-row {{
+        .btn-group {{
             display: flex;
             align-items: center;
-            gap: 10px;
-        }}
-        .google-btn-primary {{
-            background: var(--google-blue);
-            color: #040c17;
-            border: none;
-            border-radius: 8px;
-            padding: 9px 18px;
-            font-size: 13px;
-            font-weight: 600;
-            font-family: 'Google Sans', sans-serif;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
             gap: 8px;
-            transition: all 0.2s ease;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }}
-        .google-btn-primary:hover {{
-            background: #aecbfa;
-            transform: translateY(-1px);
-        }}
-        .google-btn-secondary {{
-            background: var(--google-surface-variant);
-            color: var(--google-text);
-            border: 1px solid var(--google-border);
-            border-radius: 8px;
+        /* Buttons */
+        .btn-blue {{
+            background: var(--accent-blue);
+            color: #FFFFFF;
+            border: none;
+            border-radius: 9999px;
             padding: 8px 16px;
-            font-size: 13px;
-            font-weight: 500;
-            font-family: 'Google Sans', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
         }}
-        .google-btn-secondary:hover {{
-            background: var(--google-surface-hover);
-            border-color: rgba(255,255,255,0.2);
+        .btn-blue:hover {{
+            background: var(--accent-blue-hover);
         }}
-        .google-btn-danger {{
-            background: rgba(242, 139, 130, 0.15);
-            color: var(--google-red);
-            border: 1px solid rgba(242, 139, 130, 0.3);
-            border-radius: 8px;
-            padding: 9px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            font-family: 'Google Sans', sans-serif;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }}
-        .google-btn-danger:hover {{
-            background: rgba(242, 139, 130, 0.25);
-            border-color: var(--google-red);
-        }}
-        .google-btn-danger-sm {{
-            background: rgba(242, 139, 130, 0.12);
-            color: var(--google-red);
-            border: 1px solid rgba(242, 139, 130, 0.25);
-            border-radius: 6px;
-            padding: 5px 12px;
+        .btn-secondary {{
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 9999px;
+            padding: 7px 14px;
             font-size: 12px;
             font-weight: 500;
-            font-family: 'Google Sans', sans-serif;
+            font-family: inherit;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+        }}
+        .btn-secondary:hover {{
+            background: var(--bg-elevated);
+            border-color: #383838;
+            color: #FFFFFF;
+        }}
+        .btn-danger-sm {{
+            background: rgba(230, 57, 70, 0.12);
+            color: #FFA8B5;
+            border: 1px solid rgba(230, 57, 70, 0.3);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.15s ease;
         }}
-        .google-btn-danger-sm:hover {{
-            background: rgba(242, 139, 130, 0.25);
-            border-color: var(--google-red);
+        .btn-danger-sm:hover {{
+            background: #E63946;
+            color: #FFFFFF;
         }}
-        /* Metric Cards */
-        .metric-grid {{
+        .btn-danger-full {{
+            background: #E63946;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 9px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.15s ease;
+        }}
+        .btn-danger-full:hover {{
+            background: #C92A37;
+        }}
+        /* Stats Grid */
+        .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-bottom: 28px;
+        }}
+        .stat-box {{
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 16px 20px;
+        }}
+        .stat-label {{
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .stat-value {{
+            font-size: 18px;
+            font-weight: 700;
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        /* Tables & Sections */
+        .section-box {{
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
             margin-bottom: 24px;
         }}
-        .metric-card {{
-            background: var(--google-surface);
-            border: 1px solid var(--google-border);
-            border-radius: 12px;
-            padding: 20px;
-            transition: border-color 0.2s ease;
-        }}
-        .metric-card:hover {{
-            border-color: rgba(255, 255, 255, 0.2);
-        }}
-        .metric-title {{
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--google-text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            margin-bottom: 8px;
-        }}
-        .metric-val {{
-            font-size: 24px;
-            font-weight: 500;
+        .section-header {{
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
             display: flex;
-            align-items: center;
-            gap: 10px;
-        }}
-        /* Main Layout Grid */
-        .dashboard-grid {{
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-        }}
-        @media (max-width: 980px) {{
-            .dashboard-grid {{ grid-template-columns: 1fr; }}
-            .bar-search {{ display: none; }}
-        }}
-        .card {{
-            background: var(--google-surface);
-            border: 1px solid var(--google-border);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }}
-        .card-title {{
-            font-size: 15px;
-            font-weight: 600;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
             justify-content: space-between;
+            align-items: center;
+        }}
+        .section-title {{
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
         }}
         table {{
             width: 100%;
             border-collapse: collapse;
-        }}
-        th, td {{
-            padding: 13px 16px;
+            font-size: 12px;
             text-align: left;
-            border-bottom: 1px solid var(--google-border);
-            font-size: 13px;
         }}
         th {{
-            color: var(--google-text-secondary);
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-secondary);
             font-size: 11px;
-            text-transform: uppercase;
             font-weight: 600;
-            letter-spacing: 0.6px;
-            background: rgba(255,255,255,0.02);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
         }}
-        tbody tr:hover {{
-            background: rgba(255,255,255,0.02);
+        td {{
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-primary);
         }}
-        code {{
-            background: var(--google-surface-variant);
-            padding: 3px 7px;
+        tr:last-child td {{
+            border-bottom: none;
+        }}
+        tr:hover td {{
+            background: rgba(255, 255, 255, 0.015);
+        }}
+        .player-avatar {{
+            width: 26px;
+            height: 26px;
             border-radius: 6px;
-            font-family: 'Roboto Mono', monospace;
-            font-size: 12px;
-            color: var(--google-blue);
-            border: 1px solid var(--google-border-subtle);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-color);
+            color: var(--accent-blue-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 11px;
         }}
         .status-pill {{
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 3px 10px;
-            border-radius: 12px;
+            padding: 3px 8px;
+            border-radius: 9999px;
             font-size: 11px;
             font-weight: 600;
-            letter-spacing: 0.3px;
         }}
-        .status-healthy {{ background: rgba(129, 201, 149, 0.15); color: var(--google-green); }}
-        .badge-chip {{
-            background: var(--google-surface-variant);
-            border: 1px solid var(--google-border);
-            border-radius: 12px;
-            padding: 3px 9px;
-            font-size: 11px;
-            font-weight: 500;
-            font-family: 'Roboto Mono', monospace;
-        }}
-        .avatar-chip {{
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #1a73e8, #8ab4f8);
-            color: #040c17;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 12px;
+        .status-online {{
+            background: rgba(52, 211, 153, 0.12);
+            color: var(--accent-green);
         }}
         .pulse-dot {{
-            width: 7px;
-            height: 7px;
+            width: 5px;
+            height: 5px;
             border-radius: 50%;
-            background: var(--google-green);
-            box-shadow: 0 0 8px var(--google-green);
-            animation: pulse 2s infinite;
+            background: currentColor;
         }}
-        @keyframes pulse {{
-            0% {{ transform: scale(0.95); opacity: 0.8; }}
-            50% {{ transform: scale(1.2); opacity: 1; }}
-            100% {{ transform: scale(0.95); opacity: 0.8; }}
+        .code-badge {{
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-elevated);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #CCCCCC;
+        }}
+        .version-chip {{
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--accent-blue-light);
+        }}
+        /* Two Column Grid */
+        .split-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }}
+        @media (max-width: 860px) {{
+            .split-grid {{
+                grid-template-columns: 1fr;
+            }}
         }}
         .form-control {{
             width: 100%;
-            background: var(--google-bg);
-            border: 1px solid var(--google-border);
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 9px 12px;
-            color: var(--google-text);
-            font-size: 13px;
+            color: var(--text-primary);
+            font-size: 12px;
             font-family: inherit;
             margin-bottom: 12px;
-            transition: border-color 0.2s ease;
         }}
         .form-control:focus {{
             outline: none;
-            border-color: var(--google-blue);
+            border-color: var(--accent-blue);
         }}
-        .copy-btn {{
-            background: transparent;
-            border: 1px solid var(--google-border);
-            color: var(--google-text-secondary);
-            border-radius: 6px;
-            padding: 2px 8px;
+        .form-label {{
             font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }}
-        .copy-btn:hover {{
-            background: var(--google-surface-variant);
-            color: var(--google-text);
-            border-color: var(--google-blue);
-        }}
-        /* Toast Notification */
+        /* Toast */
         #toast {{
             visibility: hidden;
-            min-width: 250px;
-            background: #1b3a57;
-            color: #8ab4f8;
-            border: 1px solid var(--google-blue);
+            background: #1E1E1E;
+            color: #8AB4F8;
+            border: 1px solid var(--accent-blue);
             text-align: center;
-            border-radius: 8px;
-            padding: 12px 20px;
+            border-radius: 9999px;
+            padding: 10px 20px;
             position: fixed;
             z-index: 1000;
             left: 50%;
             bottom: 30px;
             transform: translateX(-50%);
-            font-size: 13px;
-            font-weight: 500;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
             opacity: 0;
-            transition: opacity 0.3s, visibility 0.3s;
+            transition: opacity 0.2s, visibility 0.2s;
         }}
         #toast.show {{
             visibility: visible;
@@ -1884,29 +1972,24 @@ def render_dashboard_page(current_user: str = "nom") -> str:
 <body>
     <div id="toast">Copied to clipboard!</div>
 
-    <!-- Google Cloud App Bar -->
-    <div class="google-app-bar">
-        <div class="bar-left">
-            <a href="/" class="bar-brand">
-                <svg width="22" height="22" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                <span>Noemt Cloud Console</span>
+    <!-- Navigation Top Bar -->
+    <div class="top-navbar">
+        <div class="nav-left">
+            <a href="/admin" class="brand-link">
+                <span class="white">Noemt</span><span class="blue">Addons</span>
             </a>
-            <div class="project-selector" title="Active Project">
-                <span>🏢 noemtaddons-prod</span>
-                <small style="color:var(--google-text-secondary);">▾</small>
+            <span class="brand-pill">Console • Fabric 26.1.2</span>
+        </div>
+        <div class="nav-search">
+            <input type="text" class="search-input" id="searchFilter" onkeyup="filterTable()" placeholder="Filter client instances...">
+        </div>
+        <div class="nav-right">
+            <a href="/" target="_blank" class="btn-secondary" style="padding:5px 12px; font-size:11px;">Public Site ↗</a>
+            <div class="user-chip">
+                <div class="user-avatar" title="Operator: {current_user}">{current_user[:1].upper()}</div>
+                <span>{current_user}</span>
             </div>
-        </div>
-        <div class="bar-search">
-            <input type="text" class="search-box" id="searchFilter" onkeyup="filterTable()" placeholder="Search connected instances or endpoints...">
-        </div>
-        <div class="bar-right">
-            <a href="/logout" class="google-btn-secondary" style="padding:5px 12px; font-size:12px;">Sign Out</a>
-            <div class="user-avatar" title="Logged in as {current_user}">{current_user[:1].upper()}</div>
+            <a href="/logout" class="btn-secondary" style="padding:5px 10px; font-size:11px;">Sign Out</a>
         </div>
     </div>
 
@@ -1914,180 +1997,157 @@ def render_dashboard_page(current_user: str = "nom") -> str:
     <div class="container">
         <div class="page-header">
             <div class="page-title">
-                <h1>Mod Telemetry & Instance Management</h1>
-                <p>Project: <b>noemtaddons-prod</b> • Region: <b>global</b> • Operator: <b>{current_user}</b> • Mode: <b>Event-Driven CI/CD</b></p>
+                <h1>Mod Telemetry & Control Plane</h1>
+                <p>Operator: <b>{current_user}</b> • Status: <b>Healthy</b></p>
             </div>
-            <div class="action-row">
+            <div class="btn-group">
                 <form method="POST" action="/api/action" style="display:inline;">
                     <input type="hidden" name="action" value="build">
-                    <button type="submit" class="google-btn-primary">⚡ Instant Pull & Build</button>
+                    <button type="submit" class="btn-blue">⚡ Instant Pull & Sync</button>
                 </form>
-                <a href="/changelog" class="google-btn-secondary" target="_blank">📜 View Changelog</a>
+                <a href="/changelog" class="btn-secondary" target="_blank">View Changelog</a>
             </div>
         </div>
 
-        <!-- Metric Cards -->
-        <div class="metric-grid">
-            <div class="metric-card">
-                <div class="metric-title">Active Client Instances</div>
-                <div class="metric-val">
+        <!-- Metric Stat Boxes -->
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-label">Active Clients</div>
+                <div class="stat-value">
                     <span>{connected_count}</span>
-                    <span class="status-pill status-healthy"><span class="pulse-dot"></span> {connected_count} online</span>
+                    <span class="status-pill status-online"><span class="pulse-dot"></span> {connected_count} online</span>
                 </div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Current Git Release</div>
-                <div class="metric-val">
+            <div class="stat-box">
+                <div class="stat-label">Git Branch / Commit</div>
+                <div class="stat-value" style="font-family:'JetBrains Mono',monospace; font-size:14px;">
                     <code>{short_hash}</code>
-                    <span class="badge-chip">{GIT_BRANCH}</span>
+                    <span style="font-size:11px; color:var(--text-secondary); font-weight:normal;">({GIT_BRANCH})</span>
                 </div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Build Pipeline Status</div>
-                <div class="metric-val" style="color: {'var(--google-green)' if LAST_BUILD_STATUS == 'Healthy' else 'var(--google-red)'}; font-size:20px;">
+            <div class="stat-box">
+                <div class="stat-label">Pipeline Status</div>
+                <div class="stat-value" style="color: {'var(--accent-green)' if LAST_BUILD_STATUS == 'Healthy' else 'var(--accent-red)'}; font-size:15px;">
                     {LAST_BUILD_STATUS}
                 </div>
             </div>
-            <div class="metric-card">
-                <div class="metric-title">Last Automated Deployment</div>
-                <div class="metric-val" style="font-size: 14px; font-family:'Roboto Mono',monospace;">
+            <div class="stat-box">
+                <div class="stat-label">Last Release Sync</div>
+                <div class="stat-value" style="font-size: 13px; font-family:'JetBrains Mono',monospace; color:var(--text-secondary);">
                     {LAST_BUILD_TIME}
                 </div>
             </div>
         </div>
 
-        <!-- Dashboard Grid -->
-        <div class="dashboard-grid">
-            <div>
-                <!-- Connected Instances Table -->
-                <div class="card">
-                    <div class="card-title">
-                        <span>👥 Connected Client Instances ({len(clients)})</span>
-                        <small style="color:var(--google-text-secondary); font-weight:normal;">Real-Time WebSocket Link</small>
-                    </div>
-                    <table id="instancesTable">
-                        <thead>
-                            <tr>
-                                <th>Client Instance</th>
-                                <th>Status</th>
-                                <th>IP Address</th>
-                                <th>Version</th>
-                                <th>Connected At</th>
-                                <th style="text-align:right;">Failsafe Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {player_rows}
-                        </tbody>
-                    </table>
-                </div>
+        <!-- Connected Clients Table -->
+        <div class="section-box">
+            <div class="section-header">
+                <span class="section-title">Connected Client Instances ({len(clients)})</span>
+                <span style="font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-secondary);">WebSocket Telemetry</span>
+            </div>
+            <table id="instancesTable">
+                <thead>
+                    <tr>
+                        <th>Client Instance</th>
+                        <th>Status</th>
+                        <th>IP Address</th>
+                        <th>Version</th>
+                        <th>Connected At</th>
+                        <th style="text-align:right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {player_rows}
+                </tbody>
+            </table>
+        </div>
 
-                <!-- Mod Loader Distribution Card -->
-                <div class="card">
-                    <div class="card-title">
-                        <span>📦 Distributed Builds & Dynamic Endpoints</span>
-                        <small style="color:var(--google-text-secondary); font-weight:normal;">Smart HTTP 304 Cache</small>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Component</th>
-                                <th>Download Endpoint</th>
-                                <th>Size</th>
-                                <th>Checksum</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><span class="status-pill status-healthy">MOD PAYLOAD</span></td>
-                                <td>
-                                    <code>/loaders/noemtaddons.jar</code>
-                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons.jar')">Copy</button>
-                                </td>
-                                <td>{meta['endpoints']['mod']['size'] / 1024:.1f} KB</td>
-                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['mod']['sha256'][:14]}...</small></td>
-                                <td><a href="/download/mod" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
-                            </tr>
-                            <tr>
-                                <td><span class="status-pill" style="background:rgba(138,180,248,0.15); color:var(--google-blue);">BOOTSTRAP LOADER</span></td>
-                                <td>
-                                    <code>/download/loader</code>
-                                    <button class="copy-btn" onclick="copyText('https://addons.noemt.dev/download/loader')">Copy</button>
-                                </td>
-                                <td>{meta['endpoints']['loader']['size'] / 1024:.1f} KB</td>
-                                <td><small style="color:var(--google-text-secondary);">{meta['endpoints']['loader']['sha256'][:14]}...</small></td>
-                                <td><a href="/download/loader" class="google-btn-secondary" style="padding:4px 10px; font-size:11px;">Download .jar</a></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+        <!-- Builds & Distribution -->
+        <div class="section-box">
+            <div class="section-header">
+                <span class="section-title">Mod Build Endpoints & Artifacts</span>
+                <span style="font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-secondary);">HTTP 304 Cache Enabled</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Component</th>
+                        <th>Endpoint</th>
+                        <th>Size</th>
+                        <th>Checksum</th>
+                        <th style="text-align:right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="status-pill status-online">MOD PAYLOAD</span></td>
+                        <td>
+                            <code class="code-badge">/loaders/noemtaddons.jar</code>
+                        </td>
+                        <td style="font-family:'JetBrains Mono',monospace;">{meta['endpoints']['mod']['size'] / 1024:.1f} KB</td>
+                        <td><small style="color:var(--text-secondary); font-family:'JetBrains Mono',monospace;">{meta['endpoints']['mod']['sha256'][:14]}...</small></td>
+                        <td style="text-align:right;">
+                            <button class="btn-secondary" style="padding:3px 8px; font-size:11px;" onclick="copyText('https://addons.noemt.dev/loaders/noemtaddons.jar')">Copy URL</button>
+                            <a href="/download/mod" class="btn-blue" style="padding:3px 10px; font-size:11px; margin-left:4px;">Download</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><span class="status-pill" style="background:rgba(26,115,232,0.15); color:var(--accent-blue-light);">BOOTSTRAP LOADER</span></td>
+                        <td>
+                            <code class="code-badge">/download/loader</code>
+                        </td>
+                        <td style="font-family:'JetBrains Mono',monospace;">{meta['endpoints']['loader']['size'] / 1024:.1f} KB</td>
+                        <td><small style="color:var(--text-secondary); font-family:'JetBrains Mono',monospace;">{meta['endpoints']['loader']['sha256'][:14]}...</small></td>
+                        <td style="text-align:right;">
+                            <button class="btn-secondary" style="padding:3px 8px; font-size:11px;" onclick="copyText('https://addons.noemt.dev/download/loader')">Copy URL</button>
+                            <a href="/download/loader" class="btn-blue" style="padding:3px 10px; font-size:11px; margin-left:4px;">Download</a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
 
-                <!-- Instant Webhook Guide Card -->
-                <div class="card">
-                    <div class="card-title">
-                        <span>⚡ Instant GitHub CI/CD Webhook</span>
-                    </div>
-                    <p style="font-size:12px; color:var(--google-text-secondary); line-height:1.6; margin-bottom:12px;">
-                        Add this URL to your GitHub Repository Settings (<b>Webhooks → Add webhook</b>). The server will instantly pull and build on every push.
-                    </p>
-                    <div style="display:flex; gap:10px; align-items:center;">
-                        <input type="text" class="form-control" style="margin-bottom:0;" value="https://addons.noemt.dev/api/webhook" readonly id="webhookInput">
-                        <button class="google-btn-secondary" onclick="copyText(document.getElementById('webhookInput').value)">Copy URL</button>
-                    </div>
-                </div>
+        <!-- Split Grid: Remote Control & Webhook -->
+        <div class="split-grid">
+            <!-- Remote Command Dispatch -->
+            <div class="section-box" style="padding: 20px;">
+                <span class="section-title" style="display:block; margin-bottom:16px;">In-Game Remote Dispatch</span>
+                <form method="POST" action="/api/action">
+                    <label class="form-label">Action Type</label>
+                    <select name="action" class="form-control">
+                        <option value="msg">💬 Chat Message</option>
+                        <option value="title">🔔 Screen Title Alert</option>
+                        <option value="chat">⚡ Execute In-Game Command</option>
+                    </select>
+
+                    <label class="form-label">Target Player</label>
+                    <input type="text" name="target" class="form-control" value="all" placeholder="Player IGN or 'all'">
+
+                    <label class="form-label">Payload Content</label>
+                    <input type="text" name="text" class="form-control" placeholder="Message or command" required>
+
+                    <button type="submit" class="btn-blue" style="width:100%; justify-content:center; padding:10px;">Dispatch to Client →</button>
+                </form>
             </div>
 
-            <!-- Right Column: Emergency Failsafe & Remote Control -->
-            <div>
-                <!-- Emergency Client Shutdown Card -->
-                <div class="card" style="border-color: rgba(242, 139, 130, 0.4); background: linear-gradient(180deg, rgba(242,139,130,0.04), var(--google-surface));">
-                    <div class="card-title" style="color: var(--google-red);">
-                        <span>🛑 Remote Client Failsafe</span>
+            <!-- Emergency Failsafe & Webhook -->
+            <div class="section-box" style="padding: 20px;">
+                <span class="section-title" style="display:block; margin-bottom:16px; color: #FFA8B5;">Emergency Failsafe & Webhook</span>
+                
+                <form method="POST" action="/api/action" onsubmit="return confirm('Trigger emergency shutdown for selected target?');" style="margin-bottom:20px;">
+                    <input type="hidden" name="action" value="kill">
+                    <label class="form-label">Emergency Client Shutdown</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" name="target" class="form-control" value="all" placeholder="Player IGN or 'all'" style="margin-bottom:0;" required>
+                        <button type="submit" class="btn-danger-full" style="width:auto; white-space:nowrap;">Close Client</button>
                     </div>
-                    <p style="font-size:12px; color:var(--google-text-secondary); margin-bottom:14px; line-height:1.5;">
-                        Emergency kill switch that closes Minecraft cleanly when away from computer.
-                    </p>
-                    <form method="POST" action="/api/action" onsubmit="return confirm('Trigger emergency shutdown for selected target?');">
-                        <input type="hidden" name="action" value="kill">
-                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">TARGET CLIENT</label>
-                        <input type="text" name="target" class="form-control" value="all" placeholder="Player IGN or 'all'" required>
-                        <button type="submit" class="google-btn-danger" style="width:100%;">⚡ Close Target Client(s)</button>
-                    </form>
-                </div>
+                </form>
 
-                <!-- Remote Command Dispatch -->
-                <div class="card">
-                    <div class="card-title">
-                        <span>🎮 Remote Instance Dispatch</span>
-                    </div>
-                    <form method="POST" action="/api/action">
-                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">ACTION</label>
-                        <select name="action" class="form-control">
-                            <option value="msg">💬 Chat Message</option>
-                            <option value="title">🔔 Screen Title Alert</option>
-                            <option value="chat">⚡ Execute In-Game Command</option>
-                        </select>
-
-                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">TARGET</label>
-                        <input type="text" name="target" class="form-control" value="all" placeholder="Player IGN or 'all'">
-
-                        <label style="font-size:11px; font-weight:600; color:var(--google-text-secondary); display:block; margin-bottom:6px;">PAYLOAD TEXT</label>
-                        <input type="text" name="text" class="form-control" placeholder="Message or $command" required>
-
-                        <button type="submit" class="google-btn-primary" style="width:100%;">Dispatch to Client →</button>
-                    </form>
-                </div>
-
-                <!-- Git Metadata -->
-                <div class="card">
-                    <div class="card-title">
-                        <span>🌿 Git Deployment Info</span>
-                    </div>
-                    <div style="font-size:12px; line-height:1.7; color:var(--google-text-secondary);">
-                        <p><b>Commit:</b> <code>{short_hash}</code> ({author})</p>
-                        <p style="margin-top:4px;"><b>Message:</b> <span style="color:var(--google-text);">{msg}</span></p>
-                        <p style="margin-top:4px;"><b>Branch:</b> <code>origin/{GIT_BRANCH}</code></p>
+                <div style="border-top:1px solid var(--border-color); pt-4; padding-top:16px;">
+                    <label class="form-label">GitHub CI/CD Webhook URL</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input type="text" class="form-control" style="margin-bottom:0; font-family:'JetBrains Mono',monospace; font-size:11px;" value="https://addons.noemt.dev/api/webhook" readonly id="webhookInput">
+                        <button class="btn-secondary" style="white-space:nowrap; padding:9px 14px;" onclick="copyText(document.getElementById('webhookInput').value)">Copy</button>
                     </div>
                 </div>
             </div>
@@ -2408,11 +2468,12 @@ class ServerApp:
 
         print("\n" + "=" * 65)
         print(" 🔒 NOEMT CLOUD CONTROL PLANE & DISCORD BOT")
-        print(f"    Web Dashboard: http://{host}:{port}/")
+        print(f"    Public Site:     http://{host}:{port}/")
+        print(f"    Admin Dashboard: http://{host}:{port}/admin")
         if has_admin_user():
-            print(f"    Operator:      {get_admin_username()} (Protected)")
+            print(f"    Operator:        {get_admin_username()} (Protected)")
         else:
-            print("    Status:        Initial Setup Required (Open URL in browser to register)")
+            print("    Status:          Initial Setup Required (Open /admin to register)")
         print("=" * 65 + "\n")
 
         logger.info(f"Starting Noemt Cloud Control Server on http://{host}:{port}")
@@ -2440,6 +2501,9 @@ async def main():
     parser.add_argument("--repo-dir", default=None, help="Root repository directory (default: parent of server/)")
     parser.add_argument("--discord-token", default=None, help="Discord Bot Token for build notifications")
     parser.add_argument("--discord-channel", default=None, help="Discord Channel ID for build notifications")
+    parser.add_argument("--jars-dir", default=None, help="Directory containing built jars")
+    parser.add_argument("--branch", default="master", help="Git branch to track")
+    parser.add_argument("--poll-interval", type=int, default=0, help="Git polling interval in seconds")
     parser.add_argument("--secret", default=None, help="Optional client authentication secret key")
     args = parser.parse_args()
 
@@ -2462,11 +2526,12 @@ async def main():
 
     print("\n" + "=" * 65)
     print(" 🔒 NOEMT CLOUD CONSOLE")
-    print(f"    URL:      http://{args.host}:{args.port}/")
+    print(f"    Public Site:     http://{args.host}:{args.port}/")
+    print(f"    Admin Dashboard: http://{args.host}:{args.port}/admin")
     if has_admin_user():
-        print(f"    Operator: {get_admin_username()} (Protected)")
+        print(f"    Operator:        {get_admin_username()} (Protected)")
     else:
-        print("    Status:   Initial Setup Required (Open URL in browser to register)")
+        print("    Status:          Initial Setup Required (Open /admin to register)")
     print("=" * 65 + "\n")
 
     logger.info(f"Starting Noemt Cloud Server on http://{args.host}:{args.port}")
