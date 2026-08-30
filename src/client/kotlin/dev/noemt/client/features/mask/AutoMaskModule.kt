@@ -37,7 +37,7 @@ object AutoMaskModule : Module {
             AutoMaskManager.onChatMessage(event.unformattedText)
         }
 
-        // 3. Screen packet handling for /equipment
+        // 3. Screen packet handling for /stats (Stats & Equipment menu)
         register<MainThreadPacketReceivedEvent.Pre> {
             val packet = event.packet
             if (packet is ClientboundOpenScreenPacket) {

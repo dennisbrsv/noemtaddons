@@ -326,7 +326,7 @@ object AutoMaskManager {
         when (currentStage) {
             MaskSwapStage.PRE_CMD_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    sendClientCommand("/equipment")
+                    sendClientCommand("/stats")
                     guiWaitTimeoutMs = now + 2500L
                     currentStage = MaskSwapStage.WAITING_GUI_OPEN
                 }
@@ -339,7 +339,7 @@ object AutoMaskManager {
                     stageTargetTimeMs = now + guiOpenDelay
                     currentStage = MaskSwapStage.GUI_OPEN_WAIT
                 } else if (now >= guiWaitTimeoutMs) {
-                    ChatUtils.modMessage("&c[AutoMask] /equipment GUI open timed out! Swap failed, resetting state.")
+                    ChatUtils.modMessage("&c[AutoMask] /stats GUI open timed out! Swap failed, resetting state.")
                     resetFullState("GUI Open Timeout (Swap Failed)")
                     return
                 }
@@ -354,7 +354,7 @@ object AutoMaskManager {
                         // Regular click (PICKUP) on the item
                         mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
                     } else {
-                        ChatUtils.modMessage("&c[AutoMask] Could not find target item in /equipment! Swap failed, resetting state.")
+                        ChatUtils.modMessage("&c[AutoMask] Could not find target item in /stats! Swap failed, resetting state.")
                         player.closeContainer()
                         mc.setScreen(null)
                         resetFullState("Item Not Found in GUI (Swap Failed)")
@@ -523,10 +523,11 @@ object AutoMaskManager {
 
     fun onPacketOpenScreen(title: String, containerId: Int = 0) {
         val clean = title.removeFormatting().trim()
-        val isEquipmentMenu = clean.contains("Equipment", ignoreCase = true) ||
-                              clean.contains("Your Equipment", ignoreCase = true)
+        val isStatsMenu = clean.contains("Stats", ignoreCase = true) ||
+                          clean.contains("Equipment", ignoreCase = true) ||
+                          clean.contains("Profile", ignoreCase = true)
 
-        if (isEquipmentMenu) {
+        if (isStatsMenu) {
             inEquipmentMenu = true
             lastOpenContainerId = containerId
             if (pendingAutoClose) {

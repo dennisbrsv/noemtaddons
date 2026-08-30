@@ -44,7 +44,7 @@ open class NoemtaddonsConfig : Config() {
 
     class MaskCategory {
         @Expose
-        @ConfigOption(name = "Enable Auto Mask Swapper", desc = "Automatically swaps to Bonzo's or Spirit Mask via /equipment on low health.")
+        @ConfigOption(name = "Enable Auto Mask Swapper", desc = "Automatically swaps to Bonzo's or Spirit Mask via /stats on low health.")
         @ConfigEditorBoolean
         @JvmField
         var enabled: Boolean = true
@@ -92,7 +92,7 @@ open class NoemtaddonsConfig : Config() {
         var hudY: Float = 25f
 
         @Expose
-        @ConfigOption(name = "Swap Back Delay (ms)", desc = "Delay in milliseconds after chat proc before opening /equipment to swap back.")
+        @ConfigOption(name = "Swap Back Delay (ms)", desc = "Delay in milliseconds after chat proc before opening /stats to swap back.")
         @ConfigEditorSlider(minValue = 0f, maxValue = 500f, minStep = 25f)
         @JvmField
         var swapBackDelayMs: Float = 50f
