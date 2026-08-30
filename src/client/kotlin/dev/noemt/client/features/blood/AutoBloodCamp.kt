@@ -298,7 +298,7 @@ object AutoBloodCamp : Module {
                 if (entity is ArmorStand) return@filter false
                 if (entity is Sheep) return@filter false
                 if (entity is Player && isDungeonTeammate(entity)) return@filter false
-                if (isWatcher(entity)) return@filter false
+                if (isWatcherOrEye(entity)) return@filter false
                 if (entity is WitherBoss || entity.type == EntityType.WITHER) return@filter false
                 if (entity is Bat || entity.type == EntityType.BAT) return@filter false
                 if (entity.type == EntityType.IRON_GOLEM || entity.type == EntityType.SNOW_GOLEM) return@filter false
@@ -561,17 +561,32 @@ object AutoBloodCamp : Module {
         return false
     }
 
-    fun isWatcher(entity: net.minecraft.world.entity.Entity?): Boolean {
+    fun isWatcherOrEyeName(name: String): Boolean {
+        if (name.isBlank()) return false
+        val clean = name.removeFormatting().trim()
+        return clean.contains("The Watcher", ignoreCase = true) ||
+               clean.contains("Watcher", ignoreCase = true) ||
+               clean.contains("Watchful Eye", ignoreCase = true) ||
+               clean.contains("Beating Heart", ignoreCase = true) ||
+               clean.contains("Not bad.", ignoreCase = true) ||
+               clean.contains("Let's see how you can handle this", ignoreCase = true) ||
+               clean.contains("You have proven yourself", ignoreCase = true) ||
+               clean.contains("I have no use for you anymore", ignoreCase = true)
+    }
+
+    fun isWatcherOrEye(entity: net.minecraft.world.entity.Entity?): Boolean {
         if (entity == null) return false
         if (entity == BloodCamp.watcherEntity) return true
         if (BloodCamp.watcherEntity != null && entity.id == BloodCamp.watcherEntity?.id) return true
 
-        val name = entity.customName?.string?.removeFormatting()
+        // 1. Direct names on the entity itself
+        val directName = entity.customName?.string?.removeFormatting()
             ?: (entity as? Player)?.gameProfile?.name
             ?: (entity as? ArmorStand)?.name?.string?.removeFormatting()
-            ?: ""
-        if (name.contains("The Watcher", ignoreCase = true) || name.contains("Watcher", ignoreCase = true)) return true
+            ?: entity.name.string.removeFormatting()
+        if (isWatcherOrEyeName(directName)) return true
 
+        // 2. Head item skull texture against Watcher skulls
         val headItem = when (entity) {
             is LivingEntity -> entity.getItemBySlot(EquipmentSlot.HEAD)
             is ArmorStand -> entity.getItemBySlot(EquipmentSlot.HEAD)
@@ -582,16 +597,43 @@ object AutoBloodCamp : Module {
             if (skull != null && skull in BloodCamp.watcherSkulls) return true
         }
 
-        if (entity is Zombie && entity.y > 80.0) return true
+        // 3. Floating ArmorStand nametags directly above the entity (Hypixel SkyBlock nametags)
+        val level = mc.level
+        if (level != null) {
+            val checkArea = net.minecraft.world.phys.AABB(
+                entity.x - 1.5, entity.y - 0.5, entity.z - 1.5,
+                entity.x + 1.5, entity.y + 4.0, entity.z + 1.5
+            )
+            for (near in level.getEntities(entity, checkArea)) {
+                if (near is ArmorStand) {
+                    val standName = near.customName?.string?.removeFormatting()
+                        ?: near.name.string.removeFormatting()
+                    if (isWatcherOrEyeName(standName)) return true
+                    val standHead = near.getItemBySlot(EquipmentSlot.HEAD)
+                    if (!standHead.isEmpty) {
+                        val skull = ItemUtils.getSkullTexture(standHead)
+                        if (skull != null && skull in BloodCamp.watcherSkulls) return true
+                    }
+                }
+            }
+        }
+
+        // 4. In Blood room, any Zombie perched high on the altar (Y >= 73.0) is the Watcher or Watchful Eye
+        if (entity is Zombie && isInsideBloodRoom(entity.position()) && entity.y >= 73.0) {
+            return true
+        }
+
         return false
     }
+
+    fun isWatcher(entity: net.minecraft.world.entity.Entity?): Boolean = isWatcherOrEye(entity)
 
     private fun tryAttack(entity: LivingEntity?) {
         val player = mc.player ?: return
         val config = ConfigManager.config.blood
 
-        // STRICT WATCHER PROTECTION: Never attack or swing at the Watcher
-        if (entity != null && isWatcher(entity)) {
+        // STRICT WATCHER & WATCHFUL EYE PROTECTION: Never attack or swing at the Watcher or Watchful Eyes
+        if (entity != null && isWatcherOrEye(entity)) {
             return
         }
 
@@ -600,17 +642,17 @@ object AutoBloodCamp : Module {
             return
         }
 
-        // If crosshair or raycast hit is on the Watcher or a teammate, do not swing / left click
+        // If crosshair or raycast hit is on the Watcher, Watchful Eye, or a teammate, do not swing / left click
         val hovered = mc.crosshairPickEntity
         if (hovered != null) {
-            if (isWatcher(hovered)) return
+            if (isWatcherOrEye(hovered)) return
             if (hovered is Player && isDungeonTeammate(hovered)) return
         }
 
         val hit = mc.hitResult
         if (hit is net.minecraft.world.phys.EntityHitResult) {
             val hitEntity = hit.entity
-            if (isWatcher(hitEntity)) return
+            if (isWatcherOrEye(hitEntity)) return
             if (hitEntity is Player && isDungeonTeammate(hitEntity)) return
         }
 
