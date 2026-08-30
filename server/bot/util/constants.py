@@ -6,7 +6,7 @@ from discord.ext import commands
 GUILD_IDS = 1538276207550931206
 ADMIN_ROLE_ID = 1543546298370621580
 
-def get_guild_ids(): return GUILD_IDS
+def get_guild_ids(): return [GUILD_IDS]
 
 def is_authorized():
     async def predicate(ctx: discord.ApplicationContext):
