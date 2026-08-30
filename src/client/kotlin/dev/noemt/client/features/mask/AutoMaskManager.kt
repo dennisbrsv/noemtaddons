@@ -66,10 +66,12 @@ object AutoMaskManager {
     var inEquipmentMenu: Boolean = false
         private set
 
-    // Instance / Area tracking
+    // Instance / Area / Server tracking
     var lastDetectedInstance: dev.noemt.client.features.loadout.GameInstanceType? = null
         private set
     var lastDetectedArea: String = ""
+        private set
+    var lastDetectedServerId: String? = null
         private set
     private var instanceCheckCounter = 0
 
@@ -171,19 +173,28 @@ object AutoMaskManager {
             return
         }
 
-        // 2. Periodic Scoreboard / Instance Detection Check (every 10 ticks)
+        // 2. Periodic Scoreboard / Server / Instance Detection Check (every 10 ticks)
         instanceCheckCounter++
         if (instanceCheckCounter % 10 == 0) {
+            val snapshot = dev.noemt.client.utils.ScoreboardUtils.getSnapshot()
             val detected = dev.noemt.client.utils.ScoreboardUtils.detectGameInstance()
+            val serverId = snapshot.serverId
+
+            val serverChanged = serverId != null && serverId != lastDetectedServerId && lastDetectedServerId != null
+            if (serverChanged) {
+                lastDetectedServerId = serverId
+                resetFullState("Server Switch ($serverId)", resetCooldowns = true)
+            } else if (serverId != null) {
+                lastDetectedServerId = serverId
+            }
+
             if (detected != null) {
                 val (instanceType, areaName) = detected
                 val instanceChanged = instanceType != lastDetectedInstance || areaName != lastDetectedArea
                 if (instanceChanged) {
                     lastDetectedInstance = instanceType
                     lastDetectedArea = areaName
-                    if (isExecutingSwap || isMaskEquipped || pendingRevertAfterChat) {
-                        resetFullState("Instance Switch: $areaName ($instanceType)")
-                    }
+                    resetFullState("Instance Switch: $areaName ($instanceType)", resetCooldowns = true)
                 }
             }
         }
@@ -535,6 +546,13 @@ object AutoMaskManager {
             return
         }
 
+        // Detect dungeon run start messages to reset cooldowns
+        if (clean.contains("The dungeon run has begun!", ignoreCase = true) ||
+            clean.contains("Here, I found this map when I first entered", ignoreCase = true) ||
+            clean.contains("Starting in 1 second...", ignoreCase = true)) {
+            onDungeonRunStart()
+        }
+
         val isSpiritProc = SPIRIT_PROC_REGEX.containsMatchIn(clean)
         val isBonzoProc = BONZO_PROC_REGEX.containsMatchIn(clean)
 
@@ -592,8 +610,22 @@ object AutoMaskManager {
     fun onWorldChange() {
         lastDetectedInstance = null
         lastDetectedArea = ""
+        lastDetectedServerId = null
         instanceCheckCounter = 0
-        resetFullState("World/Instance Change")
+        resetFullState("World/Server Change", resetCooldowns = true)
+    }
+
+    fun onDungeonRunStart() {
+        resetFullState("New Dungeon Run Started", resetCooldowns = true)
+    }
+
+    fun onDungeonRunEnd() {
+        resetFullState("Dungeon Run Ended", resetCooldowns = true)
+    }
+
+    fun resetCooldowns() {
+        spiritCooldownUntilMs = 0L
+        bonzoCooldownUntilMs = 0L
     }
 
     private fun resetSwap() {
@@ -603,7 +635,7 @@ object AutoMaskManager {
         MouseRotationHelper.isSuppressed = false
     }
 
-    fun resetFullState(reason: String = "") {
+    fun resetFullState(reason: String = "", resetCooldowns: Boolean = false) {
         currentStage = MaskSwapStage.IDLE
         currentMode = MaskSwapMode.EQUIP_MASK
         stageTargetTimeMs = 0L
@@ -622,6 +654,11 @@ object AutoMaskManager {
         maskEquippedTimeMs = 0L
         swapCooldownUntilMs = System.currentTimeMillis() + 150L
         MouseRotationHelper.isSuppressed = false
+
+        if (resetCooldowns) {
+            spiritCooldownUntilMs = 0L
+            bonzoCooldownUntilMs = 0L
+        }
     }
 
     private fun sendClientCommand(command: String) {

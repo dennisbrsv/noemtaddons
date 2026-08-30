@@ -53,11 +53,11 @@ object AutoMaskModule : Module {
         }
 
         register<DungeonEvent.RunEndedEvent> {
-            AutoMaskManager.onWorldChange()
+            AutoMaskManager.onDungeonRunEnd()
         }
 
         register<DungeonEvent.RunStatedEvent> {
-            AutoMaskManager.onWorldChange()
+            AutoMaskManager.onDungeonRunStart()
         }
 
         // 5. Player death reset
