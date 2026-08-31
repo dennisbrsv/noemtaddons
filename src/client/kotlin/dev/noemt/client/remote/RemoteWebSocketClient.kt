@@ -114,6 +114,7 @@ object RemoteWebSocketClient : Module {
             addProperty("timestamp", System.currentTimeMillis())
         }
         sendJson(handshake)
+        dev.noemt.client.features.render.PlayerSize.onWebSocketConnected()
     }
 
     fun sendJson(obj: JsonObject): Boolean {
@@ -215,6 +216,63 @@ object RemoteWebSocketClient : Module {
                     val title = json.get("title")?.asString ?: ""
                     val subtitle = json.get("subtitle")?.asString ?: ""
                     ChatUtils.showTitle(title, subtitle)
+                }
+
+                "PLAYER_SIZE_UPDATE", "PLAYER_SIZE_BROADCAST" -> {
+                    val uuidStr = json.get("uuid")?.asString ?: json.get("Uuid")?.asString ?: ""
+                    val name = json.get("name")?.asString ?: json.get("DevName")?.asString ?: ""
+                    val customName = json.get("customName")?.asString ?: json.get("CustomName")?.asString
+                    val scaleArr = json.getAsJsonArray("scale") ?: json.getAsJsonArray("Size")
+                    val scaleList = if (scaleArr != null) {
+                        scaleArr.mapNotNull { it.asFloat }
+                    } else {
+                        val sx = json.get("scaleX")?.asFloat ?: 1.0f
+                        val sy = json.get("scaleY")?.asFloat ?: 1.0f
+                        val sz = json.get("scaleZ")?.asFloat ?: 1.0f
+                        listOf(sx, sy, sz)
+                    }
+                    if (uuidStr.isNotEmpty()) {
+                        try {
+                            val uuid = java.util.UUID.fromString(uuidStr)
+                            dev.noemt.client.features.render.PlayerSize.updatePlayerSize(uuid, name, scaleList, customName)
+                        } catch (e: Exception) {
+                            // Invalid UUID format
+                        }
+                    }
+                }
+
+                "PLAYER_SIZE_SYNC" -> {
+                    val playersArray = json.getAsJsonArray("players")
+                    if (playersArray != null) {
+                        val list = mutableListOf<dev.noemt.client.features.render.PlayerSize.PlayerScaleData>()
+                        for (elem in playersArray) {
+                            if (elem.isJsonObject) {
+                                try {
+                                    val item = gson.fromJson(elem, dev.noemt.client.features.render.PlayerSize.PlayerScaleData::class.java)
+                                    if (item != null) list.add(item)
+                                } catch (e: Exception) {
+                                    // Parse single item error ignored
+                                }
+                            }
+                        }
+                        dev.noemt.client.features.render.PlayerSize.updateAllSizes(list)
+                    }
+                }
+
+                "PLAYER_SIZE_RESET", "PLAYER_SIZE_REMOVE" -> {
+                    val uuidStr = json.get("uuid")?.asString ?: ""
+                    if (uuidStr.isNotEmpty()) {
+                        try {
+                            val uuid = java.util.UUID.fromString(uuidStr)
+                            dev.noemt.client.features.render.PlayerSize.removePlayerSize(uuid)
+                        } catch (e: Exception) {
+                            // Invalid UUID format
+                        }
+                    }
+                }
+
+                "PLAYER_SIZE_CLEAR" -> {
+                    dev.noemt.client.features.render.PlayerSize.clearAllSizes()
                 }
 
                 "DISCORD_NOTIFY" -> {

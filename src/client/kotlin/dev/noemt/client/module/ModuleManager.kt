@@ -6,6 +6,7 @@ import dev.noemt.client.features.blood.BloodCamp
 import dev.noemt.client.features.blood.BloodESP
 import dev.noemt.client.features.loadout.LoadoutModule
 import dev.noemt.client.features.mask.AutoMaskModule
+import dev.noemt.client.features.render.PlayerSize
 import dev.noemt.client.features.map.DungeonMap
 import dev.noemt.client.features.misc.ChangelogManager
 import dev.noemt.client.features.misc.StalkFeature
@@ -35,6 +36,7 @@ object ModuleManager {
         register(RemoteWebSocketClient)
         register(LoadoutModule)
         register(AutoMaskModule)
+        register(PlayerSize)
 
         // Initialize all modules
         for (module in modules) {

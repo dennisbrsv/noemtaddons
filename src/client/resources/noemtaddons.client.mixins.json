@@ -13,7 +13,9 @@
 		"IContainerScreenAccessor",
 		"MixinAbstractContainerScreen",
 		"MixinCommandSuggestions",
-		"MixinChatScreen"
+		"MixinChatScreen",
+		"MixinAvatarRenderState",
+		"MixinAvatarRenderer"
 	],
 	"injectors": {
 		"defaultRequire": 1

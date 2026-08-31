@@ -42,6 +42,55 @@ open class NoemtaddonsConfig : Config() {
     @JvmField
     var mask: MaskCategory = MaskCategory()
 
+    @Expose
+    @Category(name = "Player Size", desc = "Player size model scaling and live multiplayer WebSocket synchronization")
+    @JvmField
+    var playerSize: PlayerSizeCategory = PlayerSizeCategory()
+
+    class PlayerSizeCategory {
+        @Expose
+        @ConfigOption(name = "Enable Player Size", desc = "Master toggle for Player Size module.")
+        @ConfigEditorBoolean
+        @JvmField
+        var enabled: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "Custom Local Size", desc = "Override your own player size locally.")
+        @ConfigEditorBoolean
+        @JvmField
+        var localCustomSize: Boolean = false
+
+        @Expose
+        @ConfigOption(name = "Size X", desc = "X scale factor for your player (-3.0 to 3.0).")
+        @ConfigEditorSlider(minValue = -3.0f, maxValue = 3.0f, minStep = 0.1f)
+        @JvmField
+        var sizeX: Float = 1.0f
+
+        @Expose
+        @ConfigOption(name = "Size Y", desc = "Y scale factor for your player (-3.0 to 3.0, negative flips upside down).")
+        @ConfigEditorSlider(minValue = -3.0f, maxValue = 3.0f, minStep = 0.1f)
+        @JvmField
+        var sizeY: Float = 1.0f
+
+        @Expose
+        @ConfigOption(name = "Size Z", desc = "Z scale factor for your player (-3.0 to 3.0).")
+        @ConfigEditorSlider(minValue = -3.0f, maxValue = 3.0f, minStep = 0.1f)
+        @JvmField
+        var sizeZ: Float = 1.0f
+
+        @Expose
+        @ConfigOption(name = "Sync Online Players", desc = "Render custom sizes of other players received over WebSocket.")
+        @ConfigEditorBoolean
+        @JvmField
+        var syncOnlinePlayers: Boolean = true
+
+        @Expose
+        @ConfigOption(name = "Broadcast Size to Server", desc = "Automatically broadcast your size settings to the server so other players see your custom size.")
+        @ConfigEditorBoolean
+        @JvmField
+        var broadcastSize: Boolean = true
+    }
+
     class MaskCategory {
         @Expose
         @ConfigOption(name = "Enable Auto Mask Swapper", desc = "Automatically swaps to Bonzo's or Spirit Mask via /stats on low health.")
