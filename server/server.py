@@ -89,99 +89,7 @@ def init_db():
                 expires_at REAL NOT NULL
             )
         """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS player_sizes (
-                uuid TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                scale_x REAL NOT NULL DEFAULT 1.0,
-                scale_y REAL NOT NULL DEFAULT 1.0,
-                scale_z REAL NOT NULL DEFAULT 1.0,
-                custom_name TEXT DEFAULT '',
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
         conn.commit()
-    load_player_sizes()
-
-
-player_sizes: Dict[str, dict] = {}
-
-
-def load_player_sizes():
-    global player_sizes
-    try:
-        with get_db() as conn:
-            rows = conn.execute("SELECT uuid, name, scale_x, scale_y, scale_z, custom_name FROM player_sizes").fetchall()
-            for r in rows:
-                u = r["uuid"].lower()
-                player_sizes[u] = {
-                    "uuid": r["uuid"],
-                    "name": r["name"],
-                    "scale": [float(r["scale_x"]), float(r["scale_y"]), float(r["scale_z"])],
-                    "customName": r["custom_name"] or ""
-                }
-    except Exception as e:
-        logger.warning(f"Failed loading player sizes from database: {e}")
-
-
-def save_player_size(uuid_str: str, name: str, scale: List[float], custom_name: str = "") -> dict:
-    global player_sizes
-    clean_uuid = uuid_str.strip()
-    u_key = clean_uuid.lower()
-    sx = float(scale[0]) if len(scale) > 0 else 1.0
-    sy = float(scale[1]) if len(scale) > 1 else 1.0
-    sz = float(scale[2]) if len(scale) > 2 else 1.0
-
-    # Sanitize and clamp
-    sx = max(-10.0, min(10.0, sx))
-    sy = max(-10.0, min(10.0, sy))
-    sz = max(-10.0, min(10.0, sz))
-
-    record = {
-        "uuid": clean_uuid,
-        "name": name.strip(),
-        "scale": [sx, sy, sz],
-        "customName": (custom_name or "").strip()
-    }
-    player_sizes[u_key] = record
-
-    try:
-        with get_db() as conn:
-            conn.execute("""
-                INSERT INTO player_sizes (uuid, name, scale_x, scale_y, scale_z, custom_name, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(uuid) DO UPDATE SET
-                    name=excluded.name,
-                    scale_x=excluded.scale_x,
-                    scale_y=excluded.scale_y,
-                    scale_z=excluded.scale_z,
-                    custom_name=excluded.custom_name,
-                    updated_at=CURRENT_TIMESTAMP
-            """, (clean_uuid, name.strip(), sx, sy, sz, (custom_name or "").strip()))
-            conn.commit()
-    except Exception as e:
-        logger.warning(f"Error persisting player size for {name}: {e}")
-
-    return record
-
-
-def delete_player_size(uuid_str: str) -> bool:
-    global player_sizes
-    clean_uuid = uuid_str.strip()
-    u_key = clean_uuid.lower()
-    if u_key in player_sizes:
-        del player_sizes[u_key]
-    try:
-        with get_db() as conn:
-            conn.execute("DELETE FROM player_sizes WHERE LOWER(uuid) = ?", (u_key,))
-            conn.commit()
-    except Exception as e:
-        logger.warning(f"Error deleting player size for {uuid_str}: {e}")
-    return True
-
-
-def get_all_player_sizes_payload() -> List[dict]:
-    return list(player_sizes.values())
 
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
@@ -842,40 +750,6 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
         }
         send_http_response(writer, 200, "application/json; charset=utf-8", json.dumps(manifest_data, indent=2).encode("utf-8"))
         return
-
-    # 4.5 Player Sizes API (Multiplayer live sync & HTTP failsafe)
-    if clean_path in ("/api/player-sizes", "/api/sizes", "/player-sizes"):
-        if method == "GET":
-            payload = get_all_player_sizes_payload()
-            send_http_response(writer, 200, "application/json; charset=utf-8", json.dumps(payload, indent=2).encode("utf-8"))
-            return
-        elif method == "POST":
-            content_len = int(headers.get("content-length", 0))
-            body = (await reader.readexactly(content_len)).decode("utf-8", errors="ignore") if content_len > 0 else "{}"
-            try:
-                data = json.loads(body)
-                uuid_v = str(data.get("uuid") or data.get("Uuid") or "")
-                name_v = str(data.get("name") or data.get("DevName") or f"Player_{client_ip}")
-                scale_v = data.get("scale") or data.get("Size") or [1.0, 1.0, 1.0]
-                cname_v = str(data.get("customName") or data.get("CustomName") or "")
-                if uuid_v:
-                    rec = save_player_size(uuid_v, name_v, scale_v, cname_v)
-                    asyncio.create_task(send_to_target("all", {
-                        "type": "PLAYER_SIZE_BROADCAST",
-                        "uuid": rec["uuid"],
-                        "name": rec["name"],
-                        "scale": rec["scale"],
-                        "customName": rec["customName"],
-                        "timestamp": int(time.time() * 1000)
-                    }))
-                    send_http_response(writer, 200, "application/json", json.dumps({"success": True, "record": rec}).encode("utf-8"))
-                    return
-                else:
-                    send_http_response(writer, 400, "application/json", b'{"error":"Missing uuid field"}')
-                    return
-            except Exception as err:
-                send_http_response(writer, 400, "application/json", json.dumps({"error": str(err)}).encode("utf-8"))
-                return
 
     # 5. Cryptographic Ed25519 Signature Downloads
     if clean_path in ("/loaders/noemtaddons.jar.sig", "/loaders/noemtaddons.sig", "/download/sig", "/download/noemtaddons.jar.sig"):
@@ -2366,45 +2240,6 @@ async def handle_ws_session(reader: asyncio.StreamReader, writer: asyncio.Stream
                         "serverTime": int(datetime.now().timestamp() * 1000)
                     })
 
-                    # Send all player sizes upon handshake
-                    await send_ws_json(writer, {
-                        "type": "PLAYER_SIZE_SYNC",
-                        "players": get_all_player_sizes_payload()
-                    })
-
-                elif msg_type in ("PLAYER_SIZE_UPDATE", "SET_PLAYER_SIZE"):
-                    uuid_val = data.get("uuid") or data.get("Uuid") or (clients[player_name]["uuid"] if player_name in clients else "")
-                    name_val = data.get("name") or data.get("DevName") or player_name
-                    scale_val = data.get("scale") or data.get("Size") or [1.0, 1.0, 1.0]
-                    cname_val = data.get("customName") or data.get("CustomName") or ""
-                    if uuid_val:
-                        rec = save_player_size(str(uuid_val), str(name_val), scale_val, str(cname_val))
-                        logger.info(f"📏 Player Size updated for {name_val} ({uuid_val}): {rec['scale']}")
-                        await send_to_target("all", {
-                            "type": "PLAYER_SIZE_BROADCAST",
-                            "uuid": rec["uuid"],
-                            "name": rec["name"],
-                            "scale": rec["scale"],
-                            "customName": rec["customName"],
-                            "timestamp": int(datetime.now().timestamp() * 1000)
-                        })
-
-                elif msg_type == "PLAYER_SIZE_QUERY":
-                    await send_ws_json(writer, {
-                        "type": "PLAYER_SIZE_SYNC",
-                        "players": get_all_player_sizes_payload()
-                    })
-
-                elif msg_type in ("PLAYER_SIZE_RESET", "PLAYER_SIZE_REMOVE"):
-                    uuid_val = data.get("uuid") or (clients[player_name]["uuid"] if player_name in clients else "")
-                    if uuid_val:
-                        delete_player_size(str(uuid_val))
-                        logger.info(f"📏 Player Size reset for {player_name} ({uuid_val})")
-                        await send_to_target("all", {
-                            "type": "PLAYER_SIZE_RESET",
-                            "uuid": str(uuid_val)
-                        })
-
                 elif msg_type == "STATUS_RESPONSE":
                     x = data.get("x", 0)
                     y = data.get("y", 0)
@@ -2493,10 +2328,6 @@ Available Commands:
   goto <player|all> <x> <y> <z>       - Direct player pathfinder to coords
   stop <player|all>                   - Stop player pathfinder
   status <player|all>                 - Query player position & health
-  size <player|uuid> <scale>          - Set player uniform scale (e.g. size nom 1.5)
-  size <player|uuid> <x> <y> <z>      - Set player XYZ scale (e.g. size nom 1.2 0.8 1.2)
-  size reset <player|uuid>            - Reset player scale override
-  sizes                               - List all synchronized player scales
   webhook <url>                       - Set or test Discord webhook URL
   quit / exit                         - Shutdown server
 """)
@@ -2572,76 +2403,6 @@ Available Commands:
                 target = args.strip() if args else "all"
                 n = await send_to_target(target, {"type": "STATUS_REQUEST"})
                 print(f"Requested status from {n} client(s).")
-
-            elif cmd in ("sizes", "player-sizes", "playersizes"):
-                if not player_sizes:
-                    print("No player sizes recorded.")
-                else:
-                    print(f"\n--- Synchronized Player Sizes ({len(player_sizes)}) ---")
-                    for u, info in player_sizes.items():
-                        c_str = f" ({info['customName']})" if info.get('customName') else ""
-                        print(f"  • {info['name']}{c_str} | Scale: {info['scale']} | UUID: {info['uuid']}")
-                    print()
-
-            elif cmd == "size":
-                sub = args.split(" ")
-                if len(sub) < 2:
-                    print("Usage: size <player|uuid> <scale> OR size <player|uuid> <x> <y> <z> OR size reset <player|uuid>")
-                    continue
-                if sub[0].lower() == "reset":
-                    target = sub[1]
-                    target_uuid = None
-                    if target in clients:
-                        target_uuid = clients[target]["uuid"]
-                    else:
-                        for u, p in player_sizes.items():
-                            if p["name"].lower() == target.lower() or u == target.lower():
-                                target_uuid = p["uuid"]
-                                break
-                    if target_uuid:
-                        delete_player_size(target_uuid)
-                        await send_to_target("all", {"type": "PLAYER_SIZE_RESET", "uuid": target_uuid})
-                        print(f"Reset size for '{target}' ({target_uuid}).")
-                    else:
-                        print(f"Player '{target}' not found.")
-                    continue
-
-                target = sub[0]
-                target_uuid = target
-                target_name = target
-                if target in clients:
-                    target_uuid = clients[target]["uuid"]
-                    target_name = target
-                else:
-                    for u, p in player_sizes.items():
-                        if p["name"].lower() == target.lower() or u == target.lower():
-                            target_uuid = p["uuid"]
-                            target_name = p["name"]
-                            break
-
-                try:
-                    if len(sub) == 2:
-                        val = float(sub[1])
-                        scale = [val, val, val]
-                    elif len(sub) >= 4:
-                        scale = [float(sub[1]), float(sub[2]), float(sub[3])]
-                    else:
-                        print("Usage: size <player|uuid> <scale> OR size <player|uuid> <x> <y> <z>")
-                        continue
-                except ValueError:
-                    print("Scale values must be numbers.")
-                    continue
-
-                rec = save_player_size(target_uuid, target_name, scale)
-                await send_to_target("all", {
-                    "type": "PLAYER_SIZE_BROADCAST",
-                    "uuid": rec["uuid"],
-                    "name": rec["name"],
-                    "scale": rec["scale"],
-                    "customName": rec["customName"],
-                    "timestamp": int(time.time() * 1000)
-                })
-                print(f"Updated size for '{target_name}' ({target_uuid}) to {scale} and broadcasted to all clients.")
 
             elif cmd == "webhook":
                 global DISCORD_WEBHOOK

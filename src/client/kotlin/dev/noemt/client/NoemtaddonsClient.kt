@@ -184,8 +184,6 @@ object NoemtaddonsClient : ClientModInitializer {
                         .then(buildLoadoutCommandNode("loadout"))
                         .then(buildMaskCommandNode("mask"))
                         .then(buildMaskCommandNode("automask"))
-                        .then(buildSizeCommandNode("size"))
-                        .then(buildSizeCommandNode("playersize"))
                         .executes { context ->
                             val client = context.source.client
                             client.execute {
@@ -200,8 +198,6 @@ object NoemtaddonsClient : ClientModInitializer {
             dispatcher.register(buildLoadoutCommandNode("als"))
             dispatcher.register(buildMaskCommandNode("mask"))
             dispatcher.register(buildMaskCommandNode("automask"))
-            dispatcher.register(buildSizeCommandNode("size"))
-            dispatcher.register(buildSizeCommandNode("playersize"))
             dispatcher.register(
                 ClientCommands.literal("lore")
                     .executes {
@@ -594,122 +590,6 @@ object NoemtaddonsClient : ClientModInitializer {
                 val config = ConfigManager.config.mask
                 val state = if (config.enabled) "&aENABLED" else "&cDISABLED"
                 ChatUtils.modMessage("&b[AutoMask] &7State: $state &7| Trigger: &c${config.triggerHearts} ❤ &7| Subcommands: &e\$mask status&7, &e\$mask toggle&7, &e\$mask threshold <1-9.5>&7, &e\$mask swap&7, &e\$mask revert")
-                1
-            }
-    }
-
-    private fun buildSizeCommandNode(literal: String): com.mojang.brigadier.builder.LiteralArgumentBuilder<net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource> {
-        return ClientCommands.literal(literal)
-            .then(
-                ClientCommands.literal("reset")
-                    .executes {
-                        val config = ConfigManager.config.playerSize
-                        config.localCustomSize = false
-                        config.sizeX = 1.0f
-                        config.sizeY = 1.0f
-                        config.sizeZ = 1.0f
-                        ConfigManager.save()
-                        dev.noemt.client.features.render.PlayerSize.broadcastOwnSize(1.0f, 1.0f, 1.0f)
-                        ChatUtils.modMessage("&b[PlayerSize] &aReset player size to default (1.0, 1.0, 1.0) and broadcasted update.")
-                        1
-                    }
-            )
-            .then(
-                ClientCommands.literal("flip")
-                    .executes {
-                        val config = ConfigManager.config.playerSize
-                        config.localCustomSize = true
-                        config.sizeY = if (config.sizeY < 0f) 1.0f else -1.0f
-                        ConfigManager.save()
-                        dev.noemt.client.features.render.PlayerSize.syncCurrentConfig()
-                        val stateStr = if (config.sizeY < 0f) "&eUpside Down (Y = ${config.sizeY})" else "&aNormal (Y = ${config.sizeY})"
-                        ChatUtils.modMessage("&b[PlayerSize] &aToggled player flip: $stateStr")
-                        1
-                    }
-            )
-            .then(
-                ClientCommands.literal("sync")
-                    .executes {
-                        dev.noemt.client.features.render.PlayerSize.fetchSizesHttp()
-                        dev.noemt.client.features.render.PlayerSize.onWebSocketConnected()
-                        ChatUtils.modMessage("&b[PlayerSize] &aTriggered live WebSocket and HTTP fallback synchronization for player sizes!")
-                        1
-                    }
-            )
-            .then(
-                ClientCommands.literal("list")
-                    .executes {
-                        val sizes = dev.noemt.client.features.render.PlayerSize.playerSizes
-                        ChatUtils.modMessage("&b&l=== Synchronized Player Sizes (${sizes.size}) ===")
-                        if (sizes.isEmpty()) {
-                            ChatUtils.modMessage("&7No custom player sizes synchronized.")
-                        } else {
-                            for ((uuid, data) in sizes) {
-                                val cName = if (!data.customName.isNullOrBlank()) " &7(&d${data.customName}&7)" else ""
-                                ChatUtils.modMessage(" &e• &f${data.name}$cName &7- Scale: &b[${"%.2f".format(data.scaleX)}, ${"%.2f".format(data.scaleY)}, ${"%.2f".format(data.scaleZ)}] &8($uuid)")
-                            }
-                        }
-                        1
-                    }
-            )
-            .then(
-                ClientCommands.literal("toggle")
-                    .executes {
-                        val config = ConfigManager.config.playerSize
-                        config.enabled = !config.enabled
-                        ConfigManager.save()
-                        val s = if (config.enabled) "&aENABLED" else "&cDISABLED"
-                        ChatUtils.modMessage("&b[PlayerSize] &7Player Size module is now $s&7.")
-                        1
-                    }
-            )
-            .then(
-                ClientCommands.argument("scaleX", com.mojang.brigadier.arguments.FloatArgumentType.floatArg(-10f, 10f))
-                    .then(
-                        ClientCommands.argument("scaleY", com.mojang.brigadier.arguments.FloatArgumentType.floatArg(-10f, 10f))
-                            .then(
-                                ClientCommands.argument("scaleZ", com.mojang.brigadier.arguments.FloatArgumentType.floatArg(-10f, 10f))
-                                    .executes { ctx ->
-                                        val sx = com.mojang.brigadier.arguments.FloatArgumentType.getFloat(ctx, "scaleX")
-                                        val sy = com.mojang.brigadier.arguments.FloatArgumentType.getFloat(ctx, "scaleY")
-                                        val sz = com.mojang.brigadier.arguments.FloatArgumentType.getFloat(ctx, "scaleZ")
-                                        val config = ConfigManager.config.playerSize
-                                        config.enabled = true
-                                        config.localCustomSize = true
-                                        config.sizeX = sx
-                                        config.sizeY = sy
-                                        config.sizeZ = sz
-                                        ConfigManager.save()
-                                        dev.noemt.client.features.render.PlayerSize.broadcastOwnSize(sx, sy, sz)
-                                        ChatUtils.modMessage("&b[PlayerSize] &aSet player scale to &e[${"%.2f".format(sx)}, ${"%.2f".format(sy)}, ${"%.2f".format(sz)}]&a and broadcasted to server!")
-                                        1
-                                    }
-                            )
-                    )
-                    .executes { ctx ->
-                        val scale = com.mojang.brigadier.arguments.FloatArgumentType.getFloat(ctx, "scaleX")
-                        val config = ConfigManager.config.playerSize
-                        config.enabled = true
-                        config.localCustomSize = true
-                        config.sizeX = scale
-                        config.sizeY = scale
-                        config.sizeZ = scale
-                        ConfigManager.save()
-                        dev.noemt.client.features.render.PlayerSize.broadcastOwnSize(scale, scale, scale)
-                        ChatUtils.modMessage("&b[PlayerSize] &aSet uniform player scale to &e${"%.2f".format(scale)}&a and broadcasted to server!")
-                        1
-                    }
-            )
-            .executes {
-                val config = ConfigManager.config.playerSize
-                val state = if (config.enabled) "&aENABLED" else "&cDISABLED"
-                val localState = if (config.localCustomSize) "&aCUSTOM" else "&7DEFAULT"
-                val syncState = if (config.syncOnlinePlayers) "&aON" else "&cOFF"
-                val wsState = if (RemoteWebSocketClient.isConnected) "&aConnected" else "&cOffline (HTTP Fallback)"
-                ChatUtils.modMessage("&b&l=== Player Size Module Status ===")
-                ChatUtils.modMessage("&7State: $state &7| Local Override: $localState &7| Live Sync: $syncState &7| WS: $wsState")
-                ChatUtils.modMessage("&7Current Scale: &e[X: ${"%.2f".format(config.sizeX)}, Y: ${"%.2f".format(config.sizeY)}, Z: ${"%.2f".format(config.sizeZ)}]")
-                ChatUtils.modMessage("&7Commands: &e\$$literal <scale>&7, &e\$$literal <x> <y> <z>&7, &e\$$literal flip&7, &e\$$literal reset&7, &e\$$literal list&7, &e\$$literal sync")
                 1
             }
     }
