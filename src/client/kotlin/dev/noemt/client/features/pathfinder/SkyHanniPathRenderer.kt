@@ -23,6 +23,7 @@ class SkyHanniPathRenderer(
         private set
 
     private var nearCurveLength: Double = CURVE_RADIUS
+    private val walkPositionsBuffer = ArrayList<Vec3>()
 
     init {
         setPath(rawPositions, targetLocation)
@@ -67,8 +68,12 @@ class SkyHanniPathRenderer(
         }
 
         val (startPos, nextPathIdx) = projectOntoPath(eyePos)
-        val walkPositions: List<Vec3> = listOf(startPos) + pathPoints.drop(nextPathIdx).map { it.pos }
-        val curveEnd = findBezierEnd(walkPositions, nextPathIdx) ?: return
+        walkPositionsBuffer.clear()
+        walkPositionsBuffer.add(startPos)
+        for (i in nextPathIdx until pathPoints.size) {
+            walkPositionsBuffer.add(pathPoints[i].pos)
+        }
+        val curveEnd = findBezierEnd(walkPositionsBuffer, nextPathIdx) ?: return
 
         val dirToCurve = (curveEnd.pos.subtract(eyePos)).normalize()
         val anchor = lineStartPos.add(dirToCurve.scale(ANCHOR_FORWARD_DIST))

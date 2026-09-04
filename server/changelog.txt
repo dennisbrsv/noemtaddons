@@ -1,3 +1,21 @@
+§b§lNoemtAddons v1.0.3 Update Changelog
+
+§a[LoadoutSwapper Robustness Overhaul]
+§e• Equipment & Lore Verification Engine
+§7  Eliminated race conditions and premature state updates; checks head textures, dyed RGB, and chestplate lore.
+§e• GUI Safety & Auto-Close Protection
+§7  Title-verified container interaction with slot population wait delays and stale auto-close timeout guards.
+§e• AutoMask Coordination & Blood Room Auto-Revert
+§7  Clean mutual cancellation with AutoMask and automatic loadout restoration upon Blood Room clear or exit.
+
+§a[Mod-Wide Performance Optimizations]
+§e• Zero-Allocation Render Loops
+§7  Eliminated per-frame Vec3, Color, and AABB allocations in BloodCamp, BloodESP, MapRenderer, and PathRenderer.
+§e• Spatial Query Throttling & Caching
+§7  Throttled Watcher and mob matching scans; added entity name cache to prevent redundant tick scans.
+§e• Fast Teammate & Tablist Lookups
+§7  O(1) teammate lookups and cached tablist floor extraction without repetitive regex evaluations.
+
 §b§lNoemtAddons v1.0.2 Update Changelog
 
 §a[In-Chest Dungeon Slot Machine & Gambling]

@@ -49,7 +49,8 @@ object TabListUtils {
 
     fun init() {
         EventBus.register<MainThreadPacketReceivedEvent.Post>(EventPriority.HIGHEST) {
-            if (event.packet is ClientboundPlayerInfoUpdatePacket) {
+            val p = event.packet
+            if (p is ClientboundPlayerInfoUpdatePacket || p is net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket) {
                 listDirty = true
             }
         }

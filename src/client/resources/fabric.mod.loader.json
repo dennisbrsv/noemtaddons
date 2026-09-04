@@ -1,7 +1,7 @@
 {
 	"schemaVersion": 1,
 	"id": "noemtaddons",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"name": "NoemtAddons Loader",
 	"description": "Dynamic mod loader for NoemtAddons",
 	"authors": [

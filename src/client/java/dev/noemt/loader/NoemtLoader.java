@@ -192,7 +192,7 @@ public class NoemtLoader implements PreLaunchEntrypoint, ClientModInitializer {
             conn.setRequestMethod("HEAD");
             conn.setConnectTimeout(4000);
             conn.setReadTimeout(4000);
-            conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.2");
+            conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.3");
             if (lastModified > 0) {
                 conn.setIfModifiedSince(lastModified);
             }
@@ -210,7 +210,7 @@ public class NoemtLoader implements PreLaunchEntrypoint, ClientModInitializer {
         conn.setRequestMethod("GET");
         conn.setConnectTimeout(timeoutMs);
         conn.setReadTimeout(timeoutMs);
-        conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.2");
+        conn.setRequestProperty("User-Agent", "NoemtAddons-Loader/1.0.3");
         conn.connect();
 
         int code = conn.getResponseCode();

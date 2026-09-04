@@ -23,16 +23,39 @@ object BloodESP : Module {
     override val type = ModuleType.CHEAT
 
     private val mc: Minecraft get() = Minecraft.getInstance()
-    private var bloodData: Pair<BlockPos, Int>? = null
+    private var bloodCenter: BlockPos? = null
+    private var tracerTarget: Vec3? = null
+
+    private val checkOffsets = arrayOf(
+        Triple(-15, -6, 0),
+        Triple(-6, 15, 1),
+        Triple(15, 6, 3),
+        Triple(6, -15, 2)
+    )
 
     override fun init() {
-        register<WorldChangeEvent> { bloodData = null }
+        register<WorldChangeEvent> {
+            bloodCenter = null
+            tracerTarget = null
+        }
 
         register<TickEvent.Start> {
             if (!LocationUtils.inDungeon) return@register
             if (DungeonListener.dungeonStarted) return@register
-            if (bloodData != null) return@register
-            bloodData = findBlood()
+            if (bloodCenter != null) return@register
+            val found = findBlood()
+            if (found != null) {
+                val (center, rotation) = found
+                bloodCenter = center
+                val halfRoom = 15
+                val (doorX, doorZ) = when (rotation) {
+                    0 -> center.x to (center.z - halfRoom)
+                    1 -> (center.x - halfRoom) to center.z
+                    2 -> (center.x + halfRoom) to center.z
+                    else -> center.x to (center.z + halfRoom)
+                }
+                tracerTarget = Vec3(doorX + 0.5, center.y.toDouble(), doorZ + 0.5)
+            }
         }
 
         register<RenderWorldEvent> {
@@ -40,18 +63,13 @@ object BloodESP : Module {
             if (!config.bloodEsp && !config.espTracer) return@register
             if (!LocationUtils.inDungeon) return@register
             if (DungeonListener.dungeonStarted) return@register
-            val (center, rotation) = bloodData ?: return@register
-            val halfRoom = 15
-
-            val (doorX, doorZ) = when (rotation) {
-                0 -> center.x to (center.z - halfRoom)
-                1 -> (center.x - halfRoom) to center.z
-                2 -> (center.x + halfRoom) to center.z
-                else -> center.x to (center.z + halfRoom)
-            }
+            val center = bloodCenter ?: return@register
 
             if (config.espTracer) {
-                event.ctx.renderTracer(Vec3(doorX + 0.5, center.y.toDouble(), doorZ + 0.5), config.tracerColor.getEffectiveColour())
+                val target = tracerTarget
+                if (target != null) {
+                    event.ctx.renderTracer(target, config.tracerColor.getEffectiveColour())
+                }
             }
 
             if (config.bloodEsp) {

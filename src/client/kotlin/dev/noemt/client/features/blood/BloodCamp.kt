@@ -101,26 +101,44 @@ object BloodCamp : Module {
             watcherEntity = level.getEntity(packet.entity) as? Zombie
         }
 
+        var watcherSearchTick = 0
         register<TickEvent.Start> {
             if (LocationUtils.inBoss || !LocationUtils.inDungeon) return@register
-            if (watcherEntity == null) {
-                val level = mc.level ?: return@register
-                val watcherStand = level.entitiesForRendering().find {
-                    it is ArmorStand && it.customName?.string?.contains("The Watcher", ignoreCase = true) == true
-                }
-                if (watcherStand != null) {
-                    val z = level.entitiesForRendering().filterIsInstance<Zombie>().find {
-                        abs(it.x - watcherStand.x) < 2.0 && abs(it.z - watcherStand.z) < 2.0 && it.y > 68.0
-                    }
-                    if (z != null) watcherEntity = z
-                }
+            if (watcherEntity != null) return@register
+            if (++watcherSearchTick % 4 != 0) return@register
 
-                if (watcherEntity == null) {
-                    val z = level.entitiesForRendering().filterIsInstance<Zombie>().find {
-                        it.y > 68.0 && (it.customName?.string?.contains("Watcher", ignoreCase = true) == true ||
-                                ItemUtils.getSkullTexture(it.getItemBySlot(EquipmentSlot.HEAD)) in watcherSkulls)
+            val level = mc.level ?: return@register
+            var foundStand: ArmorStand? = null
+            val candidates = mutableListOf<Zombie>()
+
+            for (entity in level.entitiesForRendering()) {
+                if (entity is ArmorStand && foundStand == null) {
+                    if (entity.customName?.string?.contains("The Watcher", ignoreCase = true) == true) {
+                        foundStand = entity
                     }
-                    if (z != null) watcherEntity = z
+                } else if (entity is Zombie && entity.y > 68.0) {
+                    candidates.add(entity)
+                }
+            }
+
+            if (foundStand != null) {
+                val stand = foundStand
+                val matched = candidates.find { abs(it.x - stand.x) < 2.0 && abs(it.z - stand.z) < 2.0 }
+                if (matched != null) {
+                    watcherEntity = matched
+                    return@register
+                }
+            }
+
+            for (z in candidates) {
+                if (z.customName?.string?.contains("Watcher", ignoreCase = true) == true) {
+                    watcherEntity = z
+                    break
+                }
+                val skull = ItemUtils.getSkullTexture(z.getItemBySlot(EquipmentSlot.HEAD))
+                if (skull != null && skull in watcherSkulls) {
+                    watcherEntity = z
+                    break
                 }
             }
         }
@@ -191,29 +209,39 @@ object BloodCamp : Module {
         register<RenderWorldEvent> {
             val config = ConfigManager.config.blood
             if (!config.bloodCamp) return@register
-            if (LocationUtils.inBoss) return@register
-            val boxOffset = Vec3(-0.5, 1.5, -0.5)
+            if (LocationUtils.inBoss || bloodMobs.isEmpty()) return@register
 
             val boxColor = config.boxColor.getEffectiveColour()
+            val invertedBoxColor = boxColor.invert()
             val lineColor = config.lineColor.getEffectiveColour()
             val timerColor = config.timerColor.getEffectiveColour()
 
             val player = mc.player
             val ping = player?.let { mc.connection?.getPlayerInfo(it.uuid)?.latency } ?: 0
+            val decimalPlaces = config.decimalPlaces
 
             bloodMobs.forEach { (entity, data) ->
                 val endVector = data.endVector ?: return@forEach
                 val timeTook = DungeonListener.currentTime - data.started
                 val time = (if (data.firstSpawn) 40 else 0) + 38 - timeTook + 0.8
-                val endAABB = aabb(1, 1, 1, 0, 0, 0).move(boxOffset.add(endVector))
+
+                val minX = endVector.x - 0.5
+                val minY = endVector.y + 1.5
+                val minZ = endVector.z - 0.5
+                val maxX = endVector.x + 0.5
+                val maxY = endVector.y + 2.5
+                val maxZ = endVector.z + 0.5
 
                 val seconds = ((time - 0.8) / 20.0)
-                val timerText = if (config.decimalPlaces > 0) seconds.toFixed(config.decimalPlaces)
+                val timerText = if (decimalPlaces > 0) seconds.toFixed(decimalPlaces)
                 else kotlin.math.ceil(seconds).toInt().toString()
 
-                event.ctx.renderBoxBounds(endAABB, if (ping > time * 50) boxColor.invert() else boxColor, fill = false, phase = true)
-                event.ctx.renderLine(entity.renderVec.add(y = 2), endVector.add(y = 2), lineColor, phase = true)
-                event.ctx.renderString(timerText, endVector.add(y = 2.2), color = timerColor, scale = 2f, phase = true)
+                val activeColor = if (ping > time * 50) invertedBoxColor else boxColor
+                event.ctx.renderBoxBounds(minX, minY, minZ, maxX, maxY, maxZ, activeColor, fill = false, phase = true)
+
+                val entVec = entity.renderVec
+                event.ctx.renderLine(entVec.x, entVec.y + 2.0, entVec.z, endVector.x, endVector.y + 2.0, endVector.z, lineColor, phase = true)
+                event.ctx.renderString(timerText, endVector.x, endVector.y + 2.2, endVector.z, color = timerColor, scale = 2f, phase = true)
             }
         }
     }

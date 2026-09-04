@@ -38,6 +38,15 @@ object DungeonListener {
     var dungeonTeammates = mutableListOf<DungeonPlayer>()
     var dungeonTeammatesNoSelf = listOf<DungeonPlayer>()
     var thePlayer: DungeonPlayer? = null
+    val teammateNames = HashSet<String>()
+    val teammateEntityIds = HashSet<Int>()
+
+    fun isTeammate(entity: net.minecraft.world.entity.Entity): Boolean {
+        if (teammateEntityIds.contains(entity.id)) return true
+        val name = entity.name.string
+        if (teammateNames.contains(name)) return true
+        return dungeonTeammates.any { it.entity == entity || it.name.equals(name, ignoreCase = true) }
+    }
 
     data class PuzzleEntry(val name: String, var state: RoomState)
     var puzzles = mutableListOf<PuzzleEntry>()
@@ -77,17 +86,24 @@ object DungeonListener {
                     thePlayer?.isDead = PlayerUtils.getHotbarSlot(0)?.skyblockId == "HAUNT_ABILITY"
                 }
 
-                is ClientboundRemoveEntitiesPacket -> dungeonTeammates.forEach {
-                    val id = it.entity?.id ?: return@forEach
-                    if (id in packet.entityIds) {
-                        it.entity = null
+                is ClientboundRemoveEntitiesPacket -> {
+                    for (id in packet.entityIds) teammateEntityIds.remove(id)
+                    dungeonTeammates.forEach {
+                        val id = it.entity?.id ?: return@forEach
+                        if (id in packet.entityIds) {
+                            it.entity = null
+                        }
                     }
                 }
 
                 is ClientboundAddEntityPacket -> {
                     if (packet.type != EntityType.PLAYER) return@register
                     val entity = mc.level?.getEntity(packet.id) as? AbstractClientPlayer ?: return@register
-                    dungeonTeammates.find { it.entity == null && it.name == entity.name.string }?.entity = entity
+                    val matched = dungeonTeammates.find { it.entity == null && it.name == entity.name.string }
+                    if (matched != null) {
+                        matched.entity = entity
+                        teammateEntityIds.add(entity.id)
+                    }
                 }
             }
         }
@@ -196,6 +212,8 @@ object DungeonListener {
             dungeonTeammates = mutableListOf()
             dungeonTeammatesNoSelf = mutableListOf()
             thePlayer = null
+            teammateNames.clear()
+            teammateEntityIds.clear()
             puzzles.clear()
             dungeonStartTime = null
             dungeonEnded = false
@@ -223,6 +241,7 @@ object DungeonListener {
         val playerInfo = if (name == tabEntry.profile.name) tabEntry
         else mc.connection?.getPlayerInfo(name) ?: tabEntry
         val skin = playerInfo.skin.body.texturePath()
+        teammateNames.add(name)
 
         dungeonTeammates.find { it.name == name }?.let { currentTeammate ->
             currentTeammate.clazz = if (clazz != "DEAD") DungeonClass.fromName(clazz) else currentTeammate.clazz
@@ -244,7 +263,11 @@ object DungeonListener {
 
         dungeonTeammates.forEach { teammate ->
             if (teammate.entity != null) return@forEach
-            teammate.entity = mc.level?.players()?.find { it.name.string == teammate.name }
+            val foundPlayer = mc.level?.players()?.find { it.name.string == teammate.name }
+            if (foundPlayer != null) {
+                teammate.entity = foundPlayer
+                teammateEntityIds.add(foundPlayer.id)
+            }
         }
     }
 }

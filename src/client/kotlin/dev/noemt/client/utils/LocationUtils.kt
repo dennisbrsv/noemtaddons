@@ -55,15 +55,9 @@ object LocationUtils {
         var foundFloorNum = snap.dungeonFloorNumber
 
         if (foundFloor == null && inDungeon) {
-            for (entry in TabListUtils.getTabList()) {
-                val clean = ChatUtils.run { entry.first.string.removeFormatting().trim() }
-                val match = floorRegex.find(clean)
-                if (match != null) {
-                    foundFloor = match.groupValues[1].uppercase()
-                    foundFloorNum = if (foundFloor == "E") 0 else foundFloor.filter { it.isDigit() }.toIntOrNull() ?: 1
-                    break
-                }
-            }
+            val tabSnap = TabListUtils.getSnapshot()
+            foundFloor = tabSnap.dungeonFloor
+            foundFloorNum = tabSnap.dungeonFloorNumber
         }
 
         if (foundFloor != null) {

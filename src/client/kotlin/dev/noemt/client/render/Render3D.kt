@@ -179,7 +179,11 @@ object Render3D {
         phase: Boolean = false
     ) = renderString(text, pos.x, pos.y, pos.z, color, scale, phase)
 
-    fun RenderContext.renderLine(start: Vec3, finish: Vec3, color: Color, thickness: Number = 2, phase: Boolean = false) {
+    fun RenderContext.renderLine(
+        x1: Double, y1: Double, z1: Double,
+        x2: Double, y2: Double, z2: Double,
+        color: Color, thickness: Number = 2, phase: Boolean = false
+    ) {
         val cameraPos = camera.position()
         matrixStack.pushPose()
         matrixStack.translate(-cameraPos.x, -cameraPos.y, -cameraPos.z)
@@ -189,8 +193,8 @@ object Render3D {
         consumers.order(0).submitCustomGeometry(matrixStack, lines) { pose, buffer ->
             buffer.addLine(
                 pose,
-                start.x.toFloat(), start.y.toFloat(), start.z.toFloat(),
-                finish.x.toFloat(), finish.y.toFloat(), finish.z.toFloat(),
+                x1.toFloat(), y1.toFloat(), z1.toFloat(),
+                x2.toFloat(), y2.toFloat(), z2.toFloat(),
                 color.red / 255f, color.green / 255f, color.blue / 255f, color.alpha / 255f,
                 thickness.toFloat()
             )
@@ -198,6 +202,9 @@ object Render3D {
 
         matrixStack.popPose()
     }
+
+    fun RenderContext.renderLine(start: Vec3, finish: Vec3, color: Color, thickness: Number = 2, phase: Boolean = false) =
+        renderLine(start.x, start.y, start.z, finish.x, finish.y, finish.z, color, thickness, phase)
 
     fun RenderContext.renderTracer(point: Vec3, color: Color, thickness: Number = 2.5) {
         matrixStack.pushPose()

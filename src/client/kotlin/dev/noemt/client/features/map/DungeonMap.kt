@@ -40,6 +40,7 @@ object DungeonMap : Module {
 
             val mimicRoom = DungeonScanner.mimicRoom
             if (BuildConstants.isCheatBuild && config.mimicEsp && !ScoreCalculation.mimicKilled && mimicRoom != null) {
+                val mimicColor = config.mimicEspColor.getEffectiveColour()
                 for (chestPos in mimicRoom.trappedChestPositions) {
                     if (!WorldUtils.getStateAt(chestPos).`is`(Blocks.TRAPPED_CHEST)) continue
                     val rotation = mimicRoom.rotation ?: continue
@@ -47,10 +48,12 @@ object DungeonMap : Module {
                     val relative = ScanUtils.getRelativeCoord(chestPos, corner, rotation)
                     if (mimicRoom.data.secretCoords.chest.none { it == relative }) continue
 
-                    val box = AABB(chestPos)
+                    val cx = chestPos.x.toDouble()
+                    val cy = chestPos.y.toDouble()
+                    val cz = chestPos.z.toDouble()
                     event.ctx.renderBoxBounds(
-                        box,
-                        config.mimicEspColor.getEffectiveColour(),
+                        cx, cy, cz, cx + 1.0, cy + 1.0, cz + 1.0,
+                        mimicColor,
                         outline = true,
                         fill = true,
                         phase = true
@@ -60,18 +63,22 @@ object DungeonMap : Module {
 
             if (!BuildConstants.isCheatBuild || !config.boxDoors) return@register
             val shouldHideUndiscovered = !config.dungeonMapCheater || DungeonListener.dungeonStarted
+            val keyColor = config.doorKeyColor.getEffectiveColour()
+            val noKeyColor = config.doorNoKeyColor.getEffectiveColour()
+            val outlineMode = config.boxDoorsMode == 0 || config.boxDoorsMode == 2
+            val fillMode = config.boxDoorsMode == 1 || config.boxDoorsMode == 2
 
             for (tile in DungeonScanner.dungeonList) {
                 if (tile !is DoorTile || tile.opened) continue
                 if (tile.type != DoorType.BLOOD && tile.type != DoorType.WITHER) continue
                 if (shouldHideUndiscovered && tile.state == RoomState.UNDISCOVERED && !DungeonTree.isFairy(tile)) continue
 
-                val color = if (tile.type.keys > 0) config.doorKeyColor.getEffectiveColour() else config.doorNoKeyColor.getEffectiveColour()
+                val color = if (tile.type.keys > 0) keyColor else noKeyColor
                 event.ctx.renderBoxBounds(
                     tile.aabb,
                     color,
-                    outline = config.boxDoorsMode == 0 || config.boxDoorsMode == 2,
-                    fill = config.boxDoorsMode == 1 || config.boxDoorsMode == 2,
+                    outline = outlineMode,
+                    fill = fillMode,
                     phase = true
                 )
             }

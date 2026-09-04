@@ -27,10 +27,16 @@ object MobMatcher {
         "Revenant Horror", "Atoned Horror", "Tarantula Broodfather", "Voidgloom Seraph", "Inferno Demonlord", "Riftstalker Bloodfiend"
     )
 
+    private class CachedNames(val timestamp: Long, val names: List<String>)
+    private val entityNamesCache = java.util.concurrent.ConcurrentHashMap<Int, CachedNames>()
+
+    fun clearCache() {
+        entityNamesCache.clear()
+    }
+
     fun isTeammate(entity: Entity): Boolean {
         if (entity == mc.player) return true
-        val name = entity.name.string
-        return DungeonListener.dungeonTeammates.any { it.name.equals(name, ignoreCase = true) || it.entity == entity }
+        return DungeonListener.isTeammate(entity)
     }
 
     fun getTrueMinibossBody(entity: Entity): Entity {
@@ -57,19 +63,36 @@ object MobMatcher {
         // Exclude self and dungeon teammates
         if (entity == mc.player || isTeammate(entity)) return false
 
-        val allNames = getAllEntityNames(entity)
-        val skull = getEntitySkullTexture(entity)
+        // Lazy resolvers to avoid computing spatial AABB queries and NBT texture reading unless required
+        var resolvedNames: List<String>? = null
+        fun names(): List<String> {
+            if (resolvedNames == null) {
+                resolvedNames = getAllEntityNames(entity)
+            }
+            return resolvedNames!!
+        }
+
+        var resolvedSkull: String? = null
+        var skullChecked = false
+        fun skull(): String? {
+            if (!skullChecked) {
+                resolvedSkull = getEntitySkullTexture(entity)
+                skullChecked = true
+            }
+            return resolvedSkull
+        }
 
         // 1. Check custom skull match if specified
         if (!skullTexture.isNullOrBlank()) {
-            if (skull == null || !skull.contains(skullTexture, ignoreCase = true)) {
+            val s = skull()
+            if (s == null || !s.contains(skullTexture, ignoreCase = true)) {
                 return false
             }
         }
 
         // 2. Check custom name filter if specified
         if (!nameFilter.isNullOrBlank()) {
-            val nameMatch = allNames.any { it.contains(nameFilter, ignoreCase = true) }
+            val nameMatch = names().any { it.contains(nameFilter, ignoreCase = true) }
             if (!nameMatch) return false
         }
 
@@ -79,33 +102,41 @@ object MobMatcher {
 
             MobCategory.BLOOD_MOB -> {
                 if (!LocationUtils.inDungeon) return false
-                (skull != null && skull in BloodCamp.mobSkulls) ||
-                        (entity is LivingEntity && entity !is ArmorStand && dev.noemt.client.features.blood.AutoBloodCamp.isInsideBloodRoom(entity.position())) ||
-                        allNames.any { name ->
-                            name.contains("Revived Undead", ignoreCase = true) ||
-                                    name.contains("Tear", ignoreCase = true) ||
-                                    name.contains("Psycho", ignoreCase = true) ||
-                                    name.contains("Vader", ignoreCase = true) ||
-                                    name.contains("Wandering Soul", ignoreCase = true) ||
-                                    name.contains("Cannibal", ignoreCase = true) ||
-                                    name.contains("Mute", ignoreCase = true) ||
-                                    name.contains("Ooze", ignoreCase = true) ||
-                                    name.contains("Parasite", ignoreCase = true) ||
-                                    name.contains("Putrid", ignoreCase = true) ||
-                                    name.contains("Freak", ignoreCase = true) ||
-                                    name.contains("Leech", ignoreCase = true) ||
-                                    name.contains("Flamethrower", ignoreCase = true)
-                        }
+                if (entity is LivingEntity && entity !is ArmorStand && dev.noemt.client.features.blood.AutoBloodCamp.isInsideBloodRoom(entity.position())) {
+                    return true
+                }
+                val allNames = names()
+                val nameMatches = allNames.any { name ->
+                    name.contains("Revived Undead", ignoreCase = true) ||
+                    name.contains("Tear", ignoreCase = true) ||
+                    name.contains("Psycho", ignoreCase = true) ||
+                    name.contains("Vader", ignoreCase = true) ||
+                    name.contains("Wandering Soul", ignoreCase = true) ||
+                    name.contains("Cannibal", ignoreCase = true) ||
+                    name.contains("Mute", ignoreCase = true) ||
+                    name.contains("Ooze", ignoreCase = true) ||
+                    name.contains("Parasite", ignoreCase = true) ||
+                    name.contains("Putrid", ignoreCase = true) ||
+                    name.contains("Freak", ignoreCase = true) ||
+                    name.contains("Leech", ignoreCase = true) ||
+                    name.contains("Flamethrower", ignoreCase = true)
+                }
+                if (nameMatches) return true
+
+                val s = skull()
+                s != null && s in BloodCamp.mobSkulls
             }
 
             MobCategory.WATCHER -> {
                 if (!LocationUtils.inDungeon) return false
-                (skull != null && skull in BloodCamp.watcherSkulls) ||
-                        allNames.any { it.contains("The Watcher", ignoreCase = true) }
+                if (names().any { it.contains("The Watcher", ignoreCase = true) }) return true
+                val s = skull()
+                s != null && s in BloodCamp.watcherSkulls
             }
 
             MobCategory.MINIBOSS -> {
                 if (!LocationUtils.inDungeon) return false
+                val allNames = names()
                 MINIBOSS_NAMES.any { mb ->
                     allNames.any { name ->
                         name.contains(mb, ignoreCase = true)
@@ -114,21 +145,24 @@ object MobMatcher {
             }
 
             MobCategory.BOSS -> {
+                val allNames = names()
                 BOSS_NAMES.any { boss -> allNames.any { it.contains(boss, ignoreCase = true) } }
             }
 
             MobCategory.SLAYER -> {
+                val allNames = names()
                 SLAYER_NAMES.any { slayer -> allNames.any { it.contains(slayer, ignoreCase = true) } }
             }
 
             MobCategory.CUSTOM_NAME -> {
                 if (nameFilter.isNullOrBlank()) true
-                else allNames.any { it.contains(nameFilter, ignoreCase = true) }
+                else names().any { it.contains(nameFilter, ignoreCase = true) }
             }
 
             MobCategory.CUSTOM_SKULL -> {
-                if (skullTexture.isNullOrBlank()) skull != null
-                else skull != null && skull.contains(skullTexture, ignoreCase = true)
+                val s = skull()
+                if (skullTexture.isNullOrBlank()) s != null
+                else s != null && s.contains(skullTexture, ignoreCase = true)
             }
         }
     }
@@ -145,6 +179,12 @@ object MobMatcher {
     }
 
     fun getAllEntityNames(entity: Entity): List<String> {
+        val now = System.currentTimeMillis()
+        val cached = entityNamesCache[entity.id]
+        if (cached != null && now - cached.timestamp < 200L) {
+            return cached.names
+        }
+
         val names = mutableListOf<String>()
 
         entity.name.string.takeIf { it.isNotBlank() }?.let { names.add(it) }
@@ -163,6 +203,11 @@ object MobMatcher {
                     near.customName?.string?.takeIf { it.isNotBlank() }?.let { names.add(it) }
                 }
             }
+        }
+
+        entityNamesCache[entity.id] = CachedNames(now, names)
+        if (entityNamesCache.size > 256) {
+            entityNamesCache.entries.removeIf { now - it.value.timestamp > 1000L }
         }
 
         return names

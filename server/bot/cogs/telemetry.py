@@ -71,7 +71,7 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
             color=0x34A853 if is_healthy else 0xEA4335,
             timestamp=datetime.utcnow()
         )
-        embed.add_field(name="📦 Mod Version", value=f"`v{meta.get('version', '1.0.2')}`", inline=True)
+        embed.add_field(name="📦 Mod Version", value=f"`v{meta.get('version', '1.0.3')}`", inline=True)
         embed.add_field(name="🔨 Build Status", value=f"`{build_status}`", inline=True)
         embed.add_field(name="👥 Online Players", value=f"`{connected_count}`", inline=True)
         embed.add_field(name="🕒 Last Build Time", value=f"`{meta.get('last_build', 'N/A')}`", inline=True)
@@ -115,7 +115,7 @@ class TelemetryCog(commands.Cog, name="Telemetry"):
             value_str = (
                 f"**UUID:** `{info.get('uuid', 'N/A')}`\n"
                 f"**IP:** `{info.get('ip', 'N/A')}`\n"
-                f"**Mod:** `v{info.get('version', '1.0.2')}`\n"
+                f"**Mod:** `v{info.get('version', '1.0.3')}`\n"
                 f"**Connected:** `{info.get('connected_at', 'N/A')}`"
             )
             embed.add_field(name=f"🎮 {name}", value=value_str, inline=False)

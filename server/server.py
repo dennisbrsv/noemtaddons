@@ -225,7 +225,7 @@ def get_project_version() -> str:
                     return line.split("=", 1)[1].strip()
         except Exception:
             pass
-    return "1.0.2"
+    return "1.0.3"
 
 
 def get_jar_path(flavor: str = "mod") -> Optional[Path]:
@@ -736,7 +736,7 @@ async def handle_http_request(method: str, path: str, headers: dict, reader: asy
     # 3. Changelog
     if clean_path in ("/changelog", "/api/changelog"):
         changelog_p = Path(__file__).parent / "changelog.txt"
-        content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.2"
+        content = changelog_p.read_text(encoding="utf-8") if changelog_p.exists() else "§bNoemtAddons v1.0.3"
         send_http_response(writer, 200, "text/plain; charset=utf-8", content.encode("utf-8"))
         return
 

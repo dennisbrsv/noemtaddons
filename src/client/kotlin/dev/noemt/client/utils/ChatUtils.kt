@@ -36,6 +36,15 @@ object ChatUtils {
 
     fun String.addColor() = replace("&", "§")
 
+    private val colorCodeMap: Map<Int, Char> = buildMap {
+        for (format in ChatFormatting.entries) {
+            val color = net.minecraft.network.chat.TextColor.fromLegacyFormat(format)
+            if (color != null) {
+                put(color.value, format.char)
+            }
+        }
+    }
+
     val Component.unformattedText get() = string.removeFormatting()
     val Component.formattedText get() = formatted(this)
 
@@ -43,19 +52,17 @@ object ChatUtils {
         val sb = StringBuilder()
         comp.visit({ style, string ->
             style.color?.let { textColor ->
-                val colorMatch = ChatFormatting.entries.firstOrNull {
-                    net.minecraft.network.chat.TextColor.fromLegacyFormat(it)?.value == textColor.value
-                }
-                if (colorMatch != null) {
-                    sb.append("§${colorMatch.toString()[1]}")
+                val code = colorCodeMap[textColor.value]
+                if (code != null) {
+                    sb.append('§').append(code)
                 }
             }
 
-            if (style.isBold) sb.append("§${ChatFormatting.BOLD.toString()[1]}")
-            if (style.isItalic) sb.append("§${ChatFormatting.ITALIC.toString()[1]}")
-            if (style.isUnderlined) sb.append("§${ChatFormatting.UNDERLINE.toString()[1]}")
-            if (style.isStrikethrough) sb.append("§${ChatFormatting.STRIKETHROUGH.toString()[1]}")
-            if (style.isObfuscated) sb.append("§${ChatFormatting.OBFUSCATED.toString()[1]}")
+            if (style.isBold) sb.append('§').append(ChatFormatting.BOLD.char)
+            if (style.isItalic) sb.append('§').append(ChatFormatting.ITALIC.char)
+            if (style.isUnderlined) sb.append('§').append(ChatFormatting.UNDERLINE.char)
+            if (style.isStrikethrough) sb.append('§').append(ChatFormatting.STRIKETHROUGH.char)
+            if (style.isObfuscated) sb.append('§').append(ChatFormatting.OBFUSCATED.char)
 
             sb.append(string)
             Optional.empty<String>()

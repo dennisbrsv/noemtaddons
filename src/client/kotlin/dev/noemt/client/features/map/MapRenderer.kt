@@ -114,6 +114,17 @@ object MapRenderer {
         return RoomState.UNOPENED
     }
 
+    private val darkenedColorCache = java.util.concurrent.ConcurrentHashMap<Color, Color>()
+    private val lerpedColorCache = java.util.concurrent.ConcurrentHashMap<Long, Color>()
+
+    private fun getDarkenedColor(color: Color): Color =
+        darkenedColorCache.computeIfAbsent(color) { it.darker().darker() }
+
+    private fun getLerpedMimicColor(base: Color, mimic: Color): Color {
+        val key = (base.rgb.toLong() shl 32) or (mimic.rgb.toLong() and 0xFFFFFFFFL)
+        return lerpedColorCache.computeIfAbsent(key) { lerpColor(base, mimic, 0.2) }
+    }
+
     private fun renderRooms(ctx: GuiGraphicsExtractor) {
         val config = ConfigManager.config.map
         val connectorSize = (HotbarMapScanner.quarterRoom.takeUnless { it == -1 } ?: 4)
@@ -125,11 +136,11 @@ object MapRenderer {
 
             var color = tile.getColor()
             if (isCheaterMapEnabled && tile.state == RoomState.UNDISCOVERED) {
-                color = color.darker().darker()
+                color = getDarkenedColor(color)
             }
 
             if (tile is RoomTile && tile.uniqueRoom?.hasMimic == true && config.highlightMimicRoom) {
-                color = lerpColor(color, config.colorMimic.getEffectiveColour(), 0.2)
+                color = getLerpedMimicColor(color, config.colorMimic.getEffectiveColour())
             }
 
             val xOffset = (x shr 1) * (MapUtils.mapRoomSize + connectorSize)

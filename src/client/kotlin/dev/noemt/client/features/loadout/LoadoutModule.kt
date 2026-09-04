@@ -57,10 +57,12 @@ object LoadoutModule : Module {
         // World Change & Run End Reset
         register<dev.noemt.client.event.impl.WorldChangeEvent> {
             LoadoutManager.onWorldChange()
+            MobMatcher.clearCache()
         }
 
         register<dev.noemt.client.event.impl.DungeonEvent.RunEndedEvent> {
             LoadoutManager.onWorldChange()
+            MobMatcher.clearCache()
         }
 
         // 2. Chat Message Trigger & Miniboss Kill Detection & Player Manual Swaps
@@ -72,9 +74,17 @@ object LoadoutModule : Module {
 
             if (!ConfigManager.config.loadout.enabled) return@register
 
+            val clean = text.removeFormatting().trim()
+
+            // Check for watcher pass / blood room cleared dialogue
+            if (clean.contains("You have proven yourself. You may pass.", ignoreCase = true) ||
+                clean.contains("That will be enough for now.", ignoreCase = true)
+            ) {
+                LoadoutManager.onBloodRoomCleared()
+            }
+
             // Check Miniboss Kill to Auto-Revert Loadout
             if (LoadoutManager.inMinibossFight) {
-                val clean = text.removeFormatting().trim()
                 val isPlayerDeathToMob = clean.contains("was killed by", ignoreCase = true) ||
                                          clean.contains("was slain by", ignoreCase = true) ||
                                          clean.contains("was struck down by", ignoreCase = true) ||
@@ -130,10 +140,22 @@ object LoadoutModule : Module {
                 }
                 dev.noemt.client.utils.map.core.RoomType.BLOOD -> {
                     if (dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom(strict = true)) {
-                        LoadoutManager.checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.BLOOD))
+                        val bloodRule = LoadoutManager.rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
+                        if (bloodRule != null) {
+                            LoadoutManager.onBloodRoomEntered(bloodRule.targetLoadoutId)
+                        } else {
+                            LoadoutManager.checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS", dungeonRoomType = dev.noemt.client.utils.map.core.RoomType.BLOOD))
+                        }
                     }
                 }
                 else -> {}
+            }
+        }
+
+        register<dev.noemt.client.event.impl.DungeonEvent.RoomEvent.onExit> {
+            if (!ConfigManager.config.loadout.enabled) return@register
+            if (event.room.data.type == dev.noemt.client.utils.map.core.RoomType.BLOOD) {
+                LoadoutManager.onBloodRoomExited()
             }
         }
 

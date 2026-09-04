@@ -309,6 +309,7 @@ object AutoMaskManager {
         // Interrupt any ongoing loadout swap since helmet swapping has priority
         if (LoadoutManager.isExecutingSwap) {
             ChatUtils.modMessage("&e[AutoMask] Interrupting regular loadout swap for emergency mask swap.")
+            LoadoutManager.abortSwap("Emergency Mask Swap")
         }
 
         lastSwapExecutionMs = System.currentTimeMillis()

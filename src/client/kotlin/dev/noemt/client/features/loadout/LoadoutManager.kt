@@ -103,12 +103,13 @@ object LoadoutManager {
     var inLoadoutMenu: Boolean = false
         private set
     private var pendingAutoClose: Boolean = false
+    private var pendingAutoCloseUntilMs: Long = 0L
     private var lastManualClick: Long = 0L
     private var lastSwapExecutionMs: Long = 0L
     private var swapCooldownUntilMs: Long = 0L
 
     // Automated GUI Swap State Machine
-    private enum class SwapStage {
+    enum class SwapStage {
         IDLE,
         PRE_CMD_WAIT,
         WAITING_GUI_OPEN,
@@ -117,11 +118,19 @@ object LoadoutManager {
         POST_ACTIONS
     }
 
-    private var currentStage = SwapStage.IDLE
+    var currentStage = SwapStage.IDLE
+        private set
     private var stageTargetTimeMs: Long = 0L
     private var guiWaitTimeoutMs: Long = 0L
+    private var slotWaitTimeoutMs: Long = 0L
     private var pendingLoadout: Loadout? = null
+    private var pendingTargetLoadoutId: String? = null
     private var pendingReason: String = "Manual"
+    private var hasReceivedContainerContent: Boolean = false
+
+    // Blood Room Auto-Revert Tracking
+    var bloodRoomPreLoadoutId: String? = null
+        private set
 
     val isExecutingSwap: Boolean get() = currentStage != SwapStage.IDLE
     val isSwapping: Boolean get() = isExecutingSwap || inLoadoutMenu || System.currentTimeMillis() < swapCooldownUntilMs || dev.noemt.client.features.mask.AutoMaskManager.isSwapping
@@ -214,10 +223,14 @@ object LoadoutManager {
                 if (now - lastSwapExecutionMs >= 400L) {
                     pendingMinibossRevert = false
                     pendingMinibossRevertLoadoutId = null
-                    val revertName = loadouts[revertId]?.name ?: revertId
-                    val reason = pendingMinibossRevertReason
-                    ChatUtils.modMessage("&b[Loadout] &a✓ $reason! Auto-swapping back to: &e$revertName")
-                    swapTo(revertId, reason, force = true)
+                    if (!isArmorMatchingLoadout(revertId)) {
+                        val revertName = loadouts[revertId]?.name ?: revertId
+                        val reason = pendingMinibossRevertReason
+                        ChatUtils.modMessage("&b[Loadout] &a✓ $reason! Auto-swapping back to: &e$revertName")
+                        swapTo(revertId, reason, force = true)
+                    } else {
+                        currentLoadoutId = revertId
+                    }
                 }
             }
         }
@@ -306,7 +319,7 @@ object LoadoutManager {
             return
         }
 
-        if (revertId != null && revertId != currentLoadoutId && !isTargetLoadoutEquipped(revertId)) {
+        if (revertId != null && revertId != currentLoadoutId && !isArmorMatchingLoadout(revertId)) {
             val revertName = loadouts[revertId]?.name ?: revertId
             if (isExecutingSwap) {
                 // Queue the revert if combat swap is still in progress
@@ -316,6 +329,41 @@ object LoadoutManager {
             } else {
                 ChatUtils.modMessage("&b[Loadout] &a✓ $mbName killed/disappeared! Auto-swapping back to: &e$revertName")
                 swapTo(revertId, "Miniboss Slain ($reason)", force = true)
+            }
+        }
+    }
+
+    fun onBloodRoomEntered(targetLoadoutId: String) {
+        if (bloodRoomPreLoadoutId == null) {
+            bloodRoomPreLoadoutId = currentLoadoutId
+        }
+        swapTo(targetLoadoutId, "Blood Room Entry")
+    }
+
+    fun onBloodRoomCleared() {
+        val revertId = bloodRoomPreLoadoutId ?: return
+        val bloodRule = rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
+        val cond = bloodRule?.condition as? LoadoutCondition.BloodRoomCondition
+        if (cond?.autoRevertOnClear == true) {
+            bloodRoomPreLoadoutId = null
+            if (revertId != currentLoadoutId && !isArmorMatchingLoadout(revertId)) {
+                val revertName = loadouts[revertId]?.name ?: revertId
+                ChatUtils.modMessage("&b[Loadout] &a✓ Blood Room cleared! Auto-reverting back to: &e$revertName")
+                swapTo(revertId, "Blood Room Clear (Auto-Revert)", force = true)
+            }
+        }
+    }
+
+    fun onBloodRoomExited() {
+        val revertId = bloodRoomPreLoadoutId ?: return
+        val bloodRule = rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
+        val cond = bloodRule?.condition as? LoadoutCondition.BloodRoomCondition
+        if (cond?.autoRevertOnClear == true) {
+            bloodRoomPreLoadoutId = null
+            if (revertId != currentLoadoutId && !isArmorMatchingLoadout(revertId)) {
+                val revertName = loadouts[revertId]?.name ?: revertId
+                ChatUtils.modMessage("&b[Loadout] &a✓ Left Blood Room! Auto-reverting back to: &e$revertName")
+                swapTo(revertId, "Left Blood Room (Auto-Revert)", force = true)
             }
         }
     }
@@ -449,8 +497,7 @@ object LoadoutManager {
     // SWAP EXECUTION & STATE MACHINE
     // ==========================================
 
-    fun isTargetLoadoutEquipped(id: String): Boolean {
-        if (currentLoadoutId == id) return true
+    fun isArmorMatchingLoadout(id: String): Boolean {
         val targetLoadout = loadouts[id] ?: return false
         val player = mc.player ?: return false
 
@@ -460,7 +507,6 @@ object LoadoutManager {
             val headTexture = ItemUtils.getSkullTexture(headItem)
             if (!targetLoadout.skullTexture.isNullOrBlank() && headTexture != null) {
                 if (headTexture == targetLoadout.skullTexture) {
-                    currentLoadoutId = id
                     return true
                 }
             }
@@ -468,7 +514,6 @@ object LoadoutManager {
             val headDyedColor = headItem.get(net.minecraft.core.component.DataComponents.DYED_COLOR)?.rgb()
             if (targetLoadout.dyedColor != null && headDyedColor != null) {
                 if (headDyedColor == targetLoadout.dyedColor) {
-                    currentLoadoutId = id
                     return true
                 }
             }
@@ -478,7 +523,6 @@ object LoadoutManager {
                 if (targetLoadout.skullTexture.isNullOrBlank() && targetLoadout.dyedColor == null) {
                     val othersWithSameItem = loadouts.values.count { it.id != id && it.itemType == headKey }
                     if (othersWithSameItem == 0) {
-                        currentLoadoutId = id
                         return true
                     }
                 }
@@ -502,7 +546,6 @@ object LoadoutManager {
                         }
                     }
                     if (otherMatches == 0) {
-                        currentLoadoutId = id
                         return true
                     }
                 }
@@ -510,6 +553,36 @@ object LoadoutManager {
         }
 
         return false
+    }
+
+    fun isTargetLoadoutEquipped(id: String): Boolean {
+        if (isArmorMatchingLoadout(id)) {
+            currentLoadoutId = id
+            return true
+        }
+        if (pendingVerificationTargetId == id) {
+            return false
+        }
+        return currentLoadoutId == id
+    }
+
+    fun abortSwap(reason: String) {
+        if (!isExecutingSwap && currentStage == SwapStage.IDLE) return
+        ChatUtils.modMessage("&e[Loadout] Swap aborted: &7$reason")
+        val player = mc.player
+        val screen = mc.screen
+        if (inLoadoutMenu || (screen is AbstractContainerScreen<*> && player != null && player.containerMenu != player.inventoryMenu)) {
+            player?.closeContainer()
+            mc.setScreen(null)
+        }
+        resetSwap()
+    }
+
+    fun isLoadoutScreenTitle(title: String): Boolean {
+        val clean = title.removeFormatting().trim()
+        return clean.contains("Loadout", ignoreCase = true) ||
+               clean.contains("Wardrobe", ignoreCase = true) ||
+               SkyblockLoadoutConstants.LOADOUT_MENU_REGEX.containsMatchIn(clean)
     }
 
     fun swapTo(id: String, reason: String = "Manual", force: Boolean = false) {
@@ -543,7 +616,7 @@ object LoadoutManager {
         }
 
         val now = System.currentTimeMillis()
-        if (!force && now - lastSwapExecutionMs < 1200L) {
+        if (!force && (now - lastSwapExecutionMs < 1200L || now < swapCooldownUntilMs)) {
             return
         }
         lastSwapExecutionMs = now
@@ -552,7 +625,7 @@ object LoadoutManager {
             previousLoadoutId = currentLoadoutId
         }
 
-        currentLoadoutId = id
+        pendingTargetLoadoutId = id
         pendingLoadout = loadout
         pendingReason = reason
 
@@ -562,12 +635,15 @@ object LoadoutManager {
                              reason.contains("Entry", ignoreCase = true) ||
                              reason.contains("Fresh", ignoreCase = true)
 
-        if (isEntryTrigger && pendingVerificationTargetId != id) {
+        if (isEntryTrigger) {
             pendingVerificationTargetId = id
             pendingVerificationReason = reason
             isSwapConfirmed = false
             verificationAttempts = 1
-            nextVerificationCheckMs = System.currentTimeMillis() + 1200L
+            nextVerificationCheckMs = now + 1200L
+        } else {
+            pendingVerificationTargetId = null
+            isSwapConfirmed = false
         }
 
         ChatUtils.modMessage("&b[Loadout] &aSwapping to: &e${loadout.name} &7(Slot ${loadout.loadoutSlot} | Trigger: &f$reason&7)")
@@ -587,10 +663,21 @@ object LoadoutManager {
         }
         RemoteWebSocketClient.sendEvent("LOADOUT_SWAP", payload)
 
-        // Stage 1: Pre /loadouts execution -> 150ms-ish delay (randomized 130ms - 175ms)
-        val preDelay = Random.nextLong(130, 175)
-        stageTargetTimeMs = System.currentTimeMillis() + preDelay
-        currentStage = SwapStage.PRE_CMD_WAIT
+        // Fast-path: check if loadout GUI is already open
+        val player = mc.player
+        val screen = mc.screen
+        val isScreenAlreadyOpen = screen is AbstractContainerScreen<*> && player != null && player.containerMenu != player.inventoryMenu && (inLoadoutMenu || isLoadoutScreenTitle(screen.title.string))
+
+        if (isScreenAlreadyOpen) {
+            stageTargetTimeMs = now + Random.nextLong(40, 75)
+            slotWaitTimeoutMs = now + 800L
+            currentStage = SwapStage.GUI_OPEN_WAIT
+        } else {
+            // Stage 1: Pre /loadouts execution -> 130ms - 175ms delay
+            val preDelay = Random.nextLong(130, 175)
+            stageTargetTimeMs = now + preDelay
+            currentStage = SwapStage.PRE_CMD_WAIT
+        }
 
         // Immediately halt and suppress all automated movement, aiming, and interactions
         PathfindingUtils.stopMovement()
@@ -601,7 +688,7 @@ object LoadoutManager {
     fun onTick() {
         // 0. Safety timeout for ongoing automated swap
         if (isExecutingSwap && System.currentTimeMillis() - lastSwapExecutionMs > 4000L) {
-            resetSwap()
+            abortSwap("Swap execution timeout (4000ms)")
         }
 
         // 1. Check Death / Ghost / Respawn State
@@ -642,7 +729,7 @@ object LoadoutManager {
                             if (!isExecutingSwap) {
                                 bloodRoomTriggeredThisEntry = true
                                 wasInBloodRoom = true
-                                checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))
+                                onBloodRoomEntered(bloodRule.targetLoadoutId)
                             }
                         } else {
                             currentLoadoutId = bloodRule.targetLoadoutId
@@ -656,6 +743,9 @@ object LoadoutManager {
                     }
                 }
             } else {
+                if (wasInBloodRoom) {
+                    onBloodRoomExited()
+                }
                 wasInBloodRoom = false
                 bloodRoomTriggeredThisEntry = false
             }
@@ -672,7 +762,8 @@ object LoadoutManager {
             val targetId = pendingVerificationTargetId!!
             val targetLoadout = loadouts[targetId]
             if (targetLoadout != null) {
-                if (currentLoadoutId == targetId || isTargetLoadoutEquipped(targetId) || isSwapConfirmed) {
+                if (isArmorMatchingLoadout(targetId) || isSwapConfirmed) {
+                    currentLoadoutId = targetId
                     pendingVerificationTargetId = null
                     verificationAttempts = 0
                 } else {
@@ -713,17 +804,19 @@ object LoadoutManager {
             SwapStage.PRE_CMD_WAIT -> {
                 if (now >= stageTargetTimeMs) {
                     sendClientCommand("/loadouts")
-
                     guiWaitTimeoutMs = now + 2500L
                     currentStage = SwapStage.WAITING_GUI_OPEN
                 }
             }
 
             SwapStage.WAITING_GUI_OPEN -> {
-                val isGuiOpen = mc.screen is AbstractContainerScreen<*> && player.containerMenu != player.inventoryMenu
-                if (isGuiOpen || inLoadoutMenu || lastOpenContainerId != 0) {
+                val screen = mc.screen
+                val screenTitle = screen?.title?.string ?: ""
+                val isGuiOpen = (screen is AbstractContainerScreen<*> && player.containerMenu != player.inventoryMenu && (inLoadoutMenu || isLoadoutScreenTitle(screenTitle))) || inLoadoutMenu
+                if (isGuiOpen) {
                     val guiOpenDelay = Random.nextLong(60, 95)
                     stageTargetTimeMs = now + guiOpenDelay
+                    slotWaitTimeoutMs = now + 800L
                     currentStage = SwapStage.GUI_OPEN_WAIT
                 } else if (now >= guiWaitTimeoutMs) {
                     ChatUtils.modMessage("&e[Loadout] /loadouts GUI open timed out, executing direct actions.")
@@ -733,11 +826,19 @@ object LoadoutManager {
 
             SwapStage.GUI_OPEN_WAIT -> {
                 if (now >= stageTargetTimeMs) {
-                    val containerId = if (lastOpenContainerId != 0) lastOpenContainerId else player.containerMenu.containerId
+                    val containerMenu = player.containerMenu
+                    val slots = containerMenu.slots
                     val targetSlot = loadout.containerSlot
 
+                    // Wait for slots to populate
+                    if (slots.size <= targetSlot || slots.all { it.item.isEmpty }) {
+                        if (now < slotWaitTimeoutMs) {
+                            return
+                        }
+                    }
+
                     // Check if already equipped from GUI slot lore
-                    val slotItem = player.containerMenu.slots.getOrNull(targetSlot)?.item ?: ItemStack.EMPTY
+                    val slotItem = slots.getOrNull(targetSlot)?.item ?: ItemStack.EMPTY
                     val isAlreadyEquippedInMenu = if (!slotItem.isEmpty) {
                         val lore = ItemUtils.run { slotItem.lore }
                         lore.any { line ->
@@ -753,10 +854,12 @@ object LoadoutManager {
                         player.closeContainer()
                         mc.setScreen(null)
                         pendingAutoClose = true
+                        pendingAutoCloseUntilMs = now + 2000L
                         currentStage = SwapStage.POST_ACTIONS
                         return
                     }
 
+                    val containerId = if (lastOpenContainerId != 0) lastOpenContainerId else containerMenu.containerId
                     mc.gameMode?.handleContainerInput(containerId, targetSlot, 0, ContainerInput.PICKUP, player)
 
                     val postClickDelay = Random.nextLong(60, 95)
@@ -770,26 +873,53 @@ object LoadoutManager {
                     player.closeContainer()
                     mc.setScreen(null)
                     pendingAutoClose = true
+                    pendingAutoCloseUntilMs = now + 2000L
                     currentStage = SwapStage.POST_ACTIONS
                 }
             }
 
             SwapStage.POST_ACTIONS -> {
-                loadout.slot?.let { s ->
-                    PlayerUtils.swapToSlot(s)
-                }
-
-                for (extraCmd in loadout.commands) {
-                    if (extraCmd.isNotBlank()) {
-                        sendClientCommand(extraCmd)
-                    }
-                }
-
-                resetSwap()
+                finishSwap()
             }
 
             SwapStage.IDLE -> {}
         }
+    }
+
+    private fun finishSwap() {
+        val targetId = pendingTargetLoadoutId ?: pendingLoadout?.id
+        if (targetId != null) {
+            currentLoadoutId = targetId
+        }
+        isSwapConfirmed = true
+
+        val loadout = pendingLoadout
+        if (loadout != null) {
+            loadout.slot?.let { s ->
+                PlayerUtils.swapToSlot(s)
+            }
+
+            for (extraCmd in loadout.commands) {
+                if (extraCmd.isNotBlank()) {
+                    sendClientCommand(extraCmd)
+                }
+            }
+        }
+
+        if (pendingMinibossRevert) {
+            val revTarget = pendingMinibossRevertLoadoutId
+            val revReason = pendingMinibossRevertReason
+            pendingMinibossRevert = false
+            pendingMinibossRevertLoadoutId = null
+            pendingMinibossRevertReason = ""
+            resetSwap()
+            if (revTarget != null && revTarget != currentLoadoutId) {
+                swapTo(revTarget, revReason, force = true)
+                return
+            }
+        }
+
+        resetSwap()
     }
 
     private fun checkGameInstance() {
@@ -824,24 +954,29 @@ object LoadoutManager {
             val inBlood = dev.noemt.client.features.blood.AutoBloodCamp.isPlayerInBloodRoom(strict = true)
             if (inBlood && !wasInBloodRoom) {
                 wasInBloodRoom = true
-                checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))
+                val bloodRule = rules.find { it.enabled && it.condition is LoadoutCondition.BloodRoomCondition }
+                if (bloodRule != null) {
+                    onBloodRoomEntered(bloodRule.targetLoadoutId)
+                } else {
+                    checkConditions(ConditionContext(inBloodRoom = true, location = "Blood Room DUNGEONS"))
+                }
             } else if (!inBlood && wasInBloodRoom) {
+                onBloodRoomExited()
                 wasInBloodRoom = false
             }
         }
     }
 
     fun onPacketOpenScreen(title: String, containerId: Int = 0) {
-        val clean = title.removeFormatting().trim()
-        val isLoadoutMenu = clean.contains("Loadout", ignoreCase = true) ||
-                            clean.contains("Wardrobe", ignoreCase = true) ||
-                            SkyblockLoadoutConstants.LOADOUT_MENU_REGEX.containsMatchIn(clean)
+        val isLoadoutMenu = isLoadoutScreenTitle(title)
 
         if (isLoadoutMenu) {
             inLoadoutMenu = true
             lastOpenContainerId = containerId
-            if (pendingAutoClose) {
+            val now = System.currentTimeMillis()
+            if (pendingAutoClose && now <= pendingAutoCloseUntilMs) {
                 pendingAutoClose = false
+                pendingAutoCloseUntilMs = 0L
                 mc.player?.closeContainer()
                 mc.setScreen(null)
             }
@@ -851,6 +986,7 @@ object LoadoutManager {
     fun onPacketCloseScreen() {
         inLoadoutMenu = false
         pendingAutoClose = false
+        pendingAutoCloseUntilMs = 0L
         lastOpenContainerId = 0
     }
 
@@ -947,13 +1083,17 @@ object LoadoutManager {
         if (autoClose) {
             player.closeContainer()
             pendingAutoClose = true
+            pendingAutoCloseUntilMs = System.currentTimeMillis() + 2000L
         }
     }
 
     private fun resetSwap() {
         currentStage = SwapStage.IDLE
         pendingLoadout = null
+        pendingTargetLoadoutId = null
         stageTargetTimeMs = 0L
+        guiWaitTimeoutMs = 0L
+        slotWaitTimeoutMs = 0L
         swapCooldownUntilMs = System.currentTimeMillis() + 150L
         MouseRotationHelper.isSuppressed = false
     }
