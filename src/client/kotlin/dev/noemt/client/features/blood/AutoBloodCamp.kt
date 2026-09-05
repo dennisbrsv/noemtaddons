@@ -475,7 +475,7 @@ object AutoBloodCamp : Module {
             // - If you killed mobs on the ground, aim somewhere in the area (the average position)
             // - Otherwise, set the resting position to the last spawned blood mob position
             val restingTarget: Vec3 = if (hasKilledGroundMobs) {
-                val allPositions = (recordedGroundMobPositions + recordedBoxPositions)
+                val allPositions = (recordedBoxPositions)
                 if (allPositions.isNotEmpty()) {
                     val avgX = allPositions.sumOf { it.x } / allPositions.size
                     val avgY = allPositions.sumOf { it.y } / allPositions.size
