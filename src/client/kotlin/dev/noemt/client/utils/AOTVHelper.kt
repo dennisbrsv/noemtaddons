@@ -62,11 +62,14 @@ object AOTVHelper {
         return true
     }
 
-    fun castTeleport(restoreSlot: Int? = null, onFinish: (() -> Unit)? = null): Boolean {
+    fun castTeleport(
+        restoreSlot: Int? = null,
+        gracePeriodMs: Long = 400L,
+        onFinish: (() -> Unit)? = null
+    ): Boolean {
         if (isTeleporting || dev.noemt.client.features.loadout.LoadoutManager.isSwapping || mc.screen != null) return false
         val slot = findAotvHotbarSlot() ?: return false
         val player = mc.player ?: return false
-        val prevSlot = restoreSlot ?: player.inventory.selectedSlot
 
         isTeleporting = true
         MouseRotationHelper.clearTarget()
@@ -83,9 +86,14 @@ object AOTVHelper {
                 delay(35)
 
                 PlayerUtils.toggleSneak(false)
-                delay(25)
-                PlayerUtils.swapToSlot(prevSlot)
                 onFinish?.invoke()
+
+                if (restoreSlot != null) {
+                    if (gracePeriodMs > 0) {
+                        delay(gracePeriodMs)
+                    }
+                    PlayerUtils.swapToSlot(restoreSlot)
+                }
             } finally {
                 PlayerUtils.toggleSneak(false)
                 isTeleporting = false

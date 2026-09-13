@@ -473,6 +473,12 @@ open class NoemtaddonsConfig : Config() {
         var autoBloodCamp: Boolean = false
 
         @Expose
+        @ConfigOption(name = "Auto M6 Boss", desc = "Automated M6/F6 boss fight: Terracotta gyro & positioning, Giant Etherwarp & kill, and Sadan stun & attack.")
+        @ConfigEditorBoolean
+        @JvmField
+        var autoM6Boss: Boolean = false
+
+        @Expose
         @ConfigOption(name = "Auto AOTV Teleport", desc = "Uses Aspect of the Void to teleport around the Blood Room and evade TNT.")
         @ConfigEditorBoolean
         @JvmField

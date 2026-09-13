@@ -54,6 +54,7 @@ object AutoBloodCamp : Module {
 
     private var attackCooldownTicks = 0
     private var teleportPauseTicks = 0
+    private var itemHoldGraceTicks = 0
     private var tntReactionDelayTicks = 0
     private var lastAotvTick = 0L
     private var savedWeaponSlot: Int? = null
@@ -148,6 +149,7 @@ object AutoBloodCamp : Module {
 
             if (attackCooldownTicks > 0) attackCooldownTicks--
             if (teleportPauseTicks > 0) teleportPauseTicks--
+            if (itemHoldGraceTicks > 0) itemHoldGraceTicks--
 
             val config = ConfigManager.config.blood
 
@@ -223,7 +225,7 @@ object AutoBloodCamp : Module {
                 savedWeaponSlot ?: player.inventory.selectedSlot
             }
 
-            if (player.inventory.selectedSlot != preferredSlot) {
+            if (itemHoldGraceTicks <= 0 && player.inventory.selectedSlot != preferredSlot) {
                 PlayerUtils.swapToSlot(preferredSlot)
             }
 
@@ -282,7 +284,8 @@ object AutoBloodCamp : Module {
                         if (MouseRotationHelper.isAimingAt(targetBlockTop, 4.5f)) {
                             lastAotvTick = currentTick
                             teleportPauseTicks = 8
-                            AOTVHelper.castTeleport(preferredSlot)
+                            itemHoldGraceTicks = 12
+                            AOTVHelper.castTeleport(preferredSlot, gracePeriodMs = 400L)
                         }
                     } else if (safeWalkPos != null) {
                         // Smoothly walk to safe spot not blocked by pillars
@@ -362,7 +365,8 @@ object AutoBloodCamp : Module {
                                 if (MouseRotationHelper.isAimingAt(targetPoint, 4.5f)) {
                                     lastAotvTick = currentTick
                                     teleportPauseTicks = 14
-                                    AOTVHelper.castTeleport(preferredSlot)
+                                    itemHoldGraceTicks = 14
+                                    AOTVHelper.castTeleport(preferredSlot, gracePeriodMs = 400L)
                                 }
                                 return@register
                             }
@@ -446,7 +450,8 @@ object AutoBloodCamp : Module {
                                 if (MouseRotationHelper.isAimingAt(targetPoint, 4.5f)) {
                                     lastAotvTick = currentTick
                                     teleportPauseTicks = 14
-                                    AOTVHelper.castTeleport(preferredSlot)
+                                    itemHoldGraceTicks = 14
+                                    AOTVHelper.castTeleport(preferredSlot, gracePeriodMs = 400L)
                                 }
                                 return@register
                             }
@@ -532,6 +537,7 @@ object AutoBloodCamp : Module {
         watcherMessageCount = 0
         attackCooldownTicks = 0
         teleportPauseTicks = 0
+        itemHoldGraceTicks = 0
         tntReactionDelayTicks = 0
         lastAotvTick = 0L
         savedWeaponSlot = null
@@ -674,6 +680,7 @@ object AutoBloodCamp : Module {
                 PlayerUtils.swapToSlot(weaponSlot)
             }
         }
+        itemHoldGraceTicks = 0
 
         if (attackCooldownTicks > 0) return
 

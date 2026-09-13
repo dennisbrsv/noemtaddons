@@ -29,7 +29,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 object TerracottaTimer {
     private val mc: Minecraft get() = Minecraft.getInstance()
 
-    private val terracottaSpawns = CopyOnWriteArrayList<Pair<BlockPos, Long>>()
+    val terracottaSpawns = CopyOnWriteArrayList<Pair<BlockPos, Long>>()
 
     private val isMasterMode: Boolean
         get() = LocationUtils.dungeonFloor?.startsWith("M") == true

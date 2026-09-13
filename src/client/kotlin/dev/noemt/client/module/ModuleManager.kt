@@ -28,6 +28,7 @@ object ModuleManager {
         register(BloodCamp)
         register(BloodESP)
         register(AutoBloodCamp)
+        register(dev.noemt.client.features.boss.AutoM6Boss)
         register(StalkFeature)
         register(SkyHanniPathfinder)
         register(ChangelogManager)
