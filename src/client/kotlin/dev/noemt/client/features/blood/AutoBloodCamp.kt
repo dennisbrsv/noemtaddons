@@ -55,7 +55,7 @@ object AutoBloodCamp : Module {
     private var attackCooldownTicks = 0
     private var teleportPauseTicks = 0
     private var tntReactionDelayTicks = 0
-    private var lastAotvTime = 0L
+    private var lastAotvTick = 0L
     private var savedWeaponSlot: Int? = null
     private var kp6WasDown = false
     private var kp7WasDown = false
@@ -253,7 +253,7 @@ object AutoBloodCamp : Module {
                     val minTntDist = dangerousTnts.minOf { tnt ->
                         min(hypot(player.x - tnt.x, player.z - tnt.z), player.distanceTo(tnt).toDouble())
                     }
-                    val now = System.currentTimeMillis()
+                    val currentTick = DungeonListener.currentTime
 
                     val safeWalkPos = PathfindingUtils.findSafePositionFromTnts(tntPositions, 6.0)
                     val safeAotvPos = PathfindingUtils.findAotvSafePositionFromTnts(tntPositions, 6.0)
@@ -262,11 +262,11 @@ object AutoBloodCamp : Module {
 
                     // Pace evasion calmly: TNT fuse gives plenty of time.
                     // Smoothly walk away first. Only Etherwarp if trapped close (< 1.8m) or safe spot is far (> 6.5m)
-                    // with a steady 1400ms cooldown.
+                    // with a steady 28-tick (1.4s) cooldown.
                     val shouldUseEtherwarp = config.autoBloodAotv &&
                             AOTVHelper.hasAotv() &&
                             (minTntDist < 1.8 || walkDist > 6.5) &&
-                            (now - lastAotvTime > 1400L) &&
+                            (currentTick - lastAotvTick > 28L) &&
                             safeAotvPos != null
 
                     if (shouldUseEtherwarp && safeAotvPos != null) {
@@ -280,7 +280,7 @@ object AutoBloodCamp : Module {
 
                         // Only cast Etherwarp once the crosshair is securely locked on the floor block
                         if (MouseRotationHelper.isAimingAt(targetBlockTop, 4.5f)) {
-                            lastAotvTime = now
+                            lastAotvTick = currentTick
                             teleportPauseTicks = 8
                             AOTVHelper.castTeleport(preferredSlot)
                         }
@@ -350,17 +350,17 @@ object AutoBloodCamp : Module {
 
                 if (!hasLos || dist > maxRange) {
                     if (!isEvadingTnt) {
-                        val now = System.currentTimeMillis()
+                        val currentTick = DungeonListener.currentTime
                         val walkShootPos = PathfindingUtils.findBestShootingPosition(targetVec, tntPositions)
                         val walkDist = walkShootPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
 
-                        if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && now - lastAotvTime > 500) {
+                        if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && currentTick - lastAotvTick > 10) {
                             val shootPos = PathfindingUtils.findAotvShootingPosition(targetVec, tntPositions)
                             if (shootPos != null) {
                                 val targetPoint = Vec3(shootPos.x + 0.5, shootPos.y + 0.95, shootPos.z + 0.5)
                                 MouseRotationHelper.setTarget(targetPoint, config.autoBloodAimSpeed)
                                 if (MouseRotationHelper.isAimingAt(targetPoint, 4.5f)) {
-                                    lastAotvTime = now
+                                    lastAotvTick = currentTick
                                     teleportPauseTicks = 14
                                     AOTVHelper.castTeleport(preferredSlot)
                                 }
@@ -434,17 +434,17 @@ object AutoBloodCamp : Module {
 
                 if (!hasLos || dist > maxRange) {
                     if (!isEvadingTnt) {
-                        val now = System.currentTimeMillis()
+                        val currentTick = DungeonListener.currentTime
                         val walkShootPos = PathfindingUtils.findBestShootingPosition(boxTargetVec, tntPositions)
                         val walkDist = walkShootPos?.let { player.position().distanceTo(Vec3(it.x + 0.5, it.y + 1.0, it.z + 0.5)) } ?: 99.0
 
-                        if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && now - lastAotvTime > 500) {
+                        if (config.autoBloodAotv && AOTVHelper.hasAotv() && walkDist > 6.0 && currentTick - lastAotvTick > 10) {
                             val shootPos = PathfindingUtils.findAotvShootingPosition(boxTargetVec, tntPositions)
                             if (shootPos != null) {
                                 val targetPoint = Vec3(shootPos.x + 0.5, shootPos.y + 0.95, shootPos.z + 0.5)
                                 MouseRotationHelper.setTarget(targetPoint, config.autoBloodAimSpeed)
                                 if (MouseRotationHelper.isAimingAt(targetPoint, 4.5f)) {
-                                    lastAotvTime = now
+                                    lastAotvTick = currentTick
                                     teleportPauseTicks = 14
                                     AOTVHelper.castTeleport(preferredSlot)
                                 }
@@ -533,7 +533,7 @@ object AutoBloodCamp : Module {
         attackCooldownTicks = 0
         teleportPauseTicks = 0
         tntReactionDelayTicks = 0
-        lastAotvTime = 0L
+        lastAotvTick = 0L
         savedWeaponSlot = null
         recordedSpawnLocations.clear()
         recordedBoxPositions.clear()
