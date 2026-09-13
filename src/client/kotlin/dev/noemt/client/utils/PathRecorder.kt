@@ -1,32 +1,54 @@
 package dev.noemt.client.utils
 
+import com.mojang.blaze3d.platform.InputConstants
 import dev.noemt.client.event.EventBus
 import dev.noemt.client.event.impl.RenderWorldEvent
+import dev.noemt.client.event.impl.TickEvent
 import dev.noemt.client.event.impl.WorldChangeEvent
 import dev.noemt.client.render.Render3D.renderBlock
 import dev.noemt.client.render.Render3D.renderLine
 import dev.noemt.client.utils.ChatUtils.modMessage
-import dev.noemt.client.utils.MathUtils.toVec
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper
+import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.core.BlockPos
 import net.minecraft.world.phys.Vec3
+import org.lwjgl.glfw.GLFW
 import java.awt.Color
 
 /**
  * Utility for recording paths as a sequence of block positions.
  *
- * Usage (from any feature or command):
- *   PathRecorder.startRecording("myPath")  — begins a new recording session
- *   PathRecorder.addPoint()                — adds the player's current block position
- *   PathRecorder.stopRecording()           — ends the session and returns the recorded list
- *   PathRecorder.getRecording("myPath")    — retrieves a saved recording by name
- *   PathRecorder.clearRecording("myPath")  — deletes a saved recording
- *   PathRecorder.clearAll()                — deletes all saved recordings
+ * Configurable Keybindings (in Minecraft Controls / Key Binds):
+ *   - "Record Path Point": Adds current block position to the path. If not recording,
+ *     it automatically starts a session ("path_<timestamp>").
+ *   - "Toggle / Finish Path Recording": Finishes the session, saves the points, and
+ *     automatically copies the Kotlin `listOf(BlockPos(...))` to your clipboard.
  *
- * Rendering is always active for the current session so you can see what you've recorded.
+ * Programmatic API:
+ *   PathRecorder.startRecording("myPath")
+ *   PathRecorder.addPoint()
+ *   PathRecorder.stopRecording()
+ *   PathRecorder.getRecording("myPath")
+ *   PathRecorder.formatAsCode("myPath")
  */
 object PathRecorder {
     private val mc: Minecraft get() = Minecraft.getInstance()
+
+    // Configurable KeyMappings (same pattern as LoadoutModule's keyCopyItemData)
+    val keyRecordPoint = KeyMapping(
+        "key.noemtaddons.record_path_point",
+        InputConstants.Type.KEYSYM,
+        GLFW.GLFW_KEY_F7,
+        KeyMapping.Category.MISC
+    )
+
+    val keyToggleRecording = KeyMapping(
+        "key.noemtaddons.toggle_path_recording",
+        InputConstants.Type.KEYSYM,
+        GLFW.GLFW_KEY_F8,
+        KeyMapping.Category.MISC
+    )
 
     private var currentName: String? = null
     private var currentPoints = mutableListOf<BlockPos>()
@@ -42,6 +64,21 @@ object PathRecorder {
     private val LINE_COLOR = Color(0, 255, 170, 160)
 
     fun init() {
+        // Register keymappings into Fabric so they appear in Minecraft's Controls menu
+        KeyMappingHelper.registerKeyMapping(keyRecordPoint)
+        KeyMappingHelper.registerKeyMapping(keyToggleRecording)
+
+        // Handle keybind presses on tick
+        EventBus.register<TickEvent.Start> {
+            while (keyRecordPoint.consumeClick()) {
+                handleRecordPointKey()
+            }
+
+            while (keyToggleRecording.consumeClick()) {
+                handleToggleRecordingKey()
+            }
+        }
+
         EventBus.register<RenderWorldEvent> {
             if (!isRecording || currentPoints.isEmpty()) return@register
             val points = currentPoints
@@ -69,6 +106,29 @@ object PathRecorder {
         }
     }
 
+    private fun handleRecordPointKey() {
+        if (!isRecording) {
+            val sessionName = "path_${System.currentTimeMillis() % 100000}"
+            startRecording(sessionName)
+        }
+        addPoint()
+    }
+
+    private fun handleToggleRecordingKey() {
+        if (isRecording) {
+            val name = currentName ?: "path"
+            val points = stopRecording()
+            if (points.isNotEmpty()) {
+                val code = formatAsCode(name) ?: ""
+                mc.keyboardHandler.clipboard = code
+                modMessage("§aCopied §e${points.size}§a path points to clipboard as Kotlin code! (Ctrl+V)")
+            }
+        } else {
+            val sessionName = "path_${System.currentTimeMillis() % 100000}"
+            startRecording(sessionName)
+        }
+    }
+
     /**
      * Starts a new recording session with the given name.
      * If a recording with that name already exists, it will be overwritten when stopped.
@@ -80,7 +140,7 @@ object PathRecorder {
         }
         currentName = name
         currentPoints = mutableListOf()
-        modMessage("§aStarted recording path '§e$name§a'. Use addPoint to record positions.")
+        modMessage("§aStarted recording path '§e$name§a'. Press point keybind or call addPoint.")
     }
 
     /**

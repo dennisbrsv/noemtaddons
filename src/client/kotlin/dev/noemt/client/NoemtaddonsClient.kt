@@ -8,6 +8,9 @@ import dev.noemt.client.utils.ChatUtils
 import dev.noemt.client.utils.DebugUtils
 import dev.noemt.client.utils.DungeonListener
 import dev.noemt.client.utils.LocationUtils
+import dev.noemt.client.utils.PathRecorder
+import dev.noemt.client.utils.TerracottaTimer
+import dev.noemt.client.utils.BossTimers
 import dev.noemt.client.utils.TabListUtils
 import dev.noemt.client.utils.ThreadUtils
 import dev.noemt.client.remote.DiscordBotManager
@@ -27,6 +30,9 @@ object NoemtaddonsClient : ClientModInitializer {
         LocationUtils.init()
         TabListUtils.init()
         DungeonListener.init()
+        PathRecorder.init()
+        TerracottaTimer.init()
+        BossTimers.init()
         ModuleManager.init()
 
         ClientCommandRegistrationCallback.EVENT.register { dispatcher, _ ->
